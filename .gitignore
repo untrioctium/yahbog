@@ -36,3 +36,4 @@ testdata/
 .vscode/
 .cursor/
 *.log
+imgui.ini

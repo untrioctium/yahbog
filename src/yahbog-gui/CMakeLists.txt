@@ -15,6 +15,16 @@ FetchContent_MakeAvailable(zlib)
 add_library(ZLIB::ZLIB ALIAS zlib)
 set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" "${zlib_BINARY_DIR}")
 
+# freetype
+FetchContent_Declare(
+  freetype
+  GIT_REPOSITORY https://gitlab.freedesktop.org/freetype/freetype.git
+  GIT_TAG VER-2-13-3
+)
+FetchContent_MakeAvailable(freetype)
+target_include_directories(freetype PRIVATE ${ZLIB_INCLUDE_DIR})
+target_link_libraries(freetype PUBLIC zlib)
+
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
