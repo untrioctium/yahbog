@@ -5,10 +5,10 @@
 
 namespace yahbog {
 
-    class apu {
-    public:
+	class apu {
+	public:
 
-    private:
-    };
+	private:
+	};
 
 }

@@ -102,13 +102,13 @@ namespace yahbog {
 		}
 
 		template<typename Handler, std::size_t... Indices>
-    	constexpr static void fill_table_for_handler(auto& table, std::index_sequence<Indices...>) {
+		constexpr static void fill_table_for_handler(auto& table, std::index_sequence<Indices...>) {
 			([&table]() constexpr {
 				constexpr auto info = Handler::address_range()[Indices];
 				constexpr auto jump_pair_value = make_jump_pair_for_range<Handler, Indices>();
 				std::fill(table.begin() + info.start, table.begin() + info.end + 1, jump_pair_value);
 			}(), ...);
-    	}
+		}
 
 		constexpr static std::array<jump_pair, NumAddresses> jump_table = [] {
 			std::array<jump_pair, NumAddresses> table{};
@@ -117,7 +117,7 @@ namespace yahbog {
 
 			([]<typename Handler>(auto& table) constexpr {
 				constexpr auto addr_range = Handler::address_range();
-                fill_table_for_handler<Handler>(table, std::make_index_sequence<addr_range.size()>{});
+				fill_table_for_handler<Handler>(table, std::make_index_sequence<addr_range.size()>{});
 			}.template operator()<Handlers>(table), ...);
 
 			return table;

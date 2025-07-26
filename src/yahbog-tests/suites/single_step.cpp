@@ -4,7 +4,7 @@ using memory_map = std::unordered_map<std::uint16_t, std::uint8_t>;
 
 struct test_mmu {
 
-    memory_map memory;
+	memory_map memory;
 
 	test_mmu() {
 	}
@@ -21,39 +21,39 @@ struct test_mmu {
 struct test_state {
 
 	yahbog::registers regs{};
-    memory_map memory;
+	memory_map memory;
 
-    static test_state from_json(nlohmann::json& js) {
-        test_state state;
-        state.regs.pc = js["pc"];
-        state.regs.sp = js["sp"];
-        state.regs.a = js["a"];
-        state.regs.b = js["b"];
-        state.regs.c = js["c"];
-        state.regs.d = js["d"];
-        state.regs.e = js["e"];
-        state.regs.f = js["f"];
-        state.regs.h = js["h"];
-        state.regs.l = js["l"];
-        state.regs.ime = js["ime"];
-        state.regs.mupc = 0;
+	static test_state from_json(nlohmann::json& js) {
+		test_state state;
+		state.regs.pc = js["pc"];
+		state.regs.sp = js["sp"];
+		state.regs.a = js["a"];
+		state.regs.b = js["b"];
+		state.regs.c = js["c"];
+		state.regs.d = js["d"];
+		state.regs.e = js["e"];
+		state.regs.f = js["f"];
+		state.regs.h = js["h"];
+		state.regs.l = js["l"];
+		state.regs.ime = js["ime"];
+		state.regs.mupc = 0;
 
-        if (js.contains("ie"))
-            state.regs.ie = js["ie"];
-        else if (js.contains("ei"))
-            state.regs.ie = js["ei"];
-        else state.regs.ie = 0;
+		if (js.contains("ie"))
+			state.regs.ie = js["ie"];
+		else if (js.contains("ei"))
+			state.regs.ie = js["ei"];
+		else state.regs.ie = 0;
 
-        for (auto& values : js["ram"]) {
-            std::uint16_t addr = values[0];
-            std::uint8_t value = values[1];
+		for (auto& values : js["ram"]) {
+			std::uint16_t addr = values[0];
+			std::uint8_t value = values[1];
 
 			state.memory[addr] = value;
-        }
-        return state;
-    }
+		}
+		return state;
+	}
 
-    std::string to_str() {
+	std::string to_str() {
 		std::string str;
 		str += std::format("PC:0x{:04X} ", regs.pc);
 		str += std::format("SP:0x{:04X} ", regs.sp);
@@ -67,54 +67,54 @@ struct test_state {
 		str += std::format("L:0x{:02X} ", regs.l);
 		str += std::format("IME:0x{:02X} ", regs.ime);
 		str += std::format("IE:0x{:02X} ", regs.ie);
-        str += "MEM:[";
+		str += "MEM:[";
 		for (auto& [addr, value] : memory) {
 			str += std::format("$0x{:04X}:0x{:02X},", addr, value);
 		}
 		str += "]\n";
 		return str;
-    }
+	}
 };
 
 #define CHECK_MISMATCH(name, expected, actual) \
 if (expected != actual) { \
-    good = false; \
+	good = false; \
 }
 
 #define CHECK_MISMATCH_BIT(name, bit, expected, actual) \
 if ((expected) != (actual)) { \
-    good = false; \
+	good = false; \
 }
 
 struct test_info {
-    std::string name;
-    std::size_t ncycles;
+	std::string name;
+	std::size_t ncycles;
 
-    test_state initial_state;
-    test_state final_state;
+	test_state initial_state;
+	test_state final_state;
 
-    static test_info from_json(nlohmann::json& js) {
-        test_info info;
-        info.name = js["name"];
-        info.ncycles = js["cycles"].size();
-        info.initial_state = test_state::from_json(js["initial"]);
-        info.final_state = test_state::from_json(js["final"]);
+	static test_info from_json(nlohmann::json& js) {
+		test_info info;
+		info.name = js["name"];
+		info.ncycles = js["cycles"].size();
+		info.initial_state = test_state::from_json(js["initial"]);
+		info.final_state = test_state::from_json(js["final"]);
 
-        if (info.initial_state.regs.ie == 1) {
-            info.final_state.regs.ie = 0;
-            info.final_state.regs.ime = 1;
-        }
+		if (info.initial_state.regs.ie == 1) {
+			info.final_state.regs.ie = 0;
+			info.final_state.regs.ime = 1;
+		}
 
-        return info;
-    }
+		return info;
+	}
 
-    bool run() {
+	bool run() {
 
 		auto mem = test_mmu{};
 
-        for (const auto& [addr, value] : initial_state.memory) {
-            mem.memory[addr] = value;
-        }
+		for (const auto& [addr, value] : initial_state.memory) {
+			mem.memory[addr] = value;
+		}
 
 		auto reader = yahbog::read_fn_t{ [&mem](uint16_t addr) { return mem.read(addr); } };
 		auto writer = yahbog::write_fn_t{ [&mem](uint16_t addr, uint8_t value) { mem.write(addr, value); } };
@@ -125,9 +125,9 @@ struct test_info {
 		cpu.prefetch();
 
 		bool ie = cpu.r().ie;
-        for (std::size_t i = 0; i < ncycles; i++) {
-            cpu.cycle();
-        }
+		for (std::size_t i = 0; i < ncycles; i++) {
+			cpu.cycle();
+		}
 
 		auto regs = cpu.r();
 
@@ -137,37 +137,37 @@ struct test_info {
 			regs.pc--;
 
 		// simulate enabling interrupts if it was pending
-        if (ie) {
-            regs.ime = 1;
-            regs.ie = 0;
-        }
+		if (ie) {
+			regs.ime = 1;
+			regs.ie = 0;
+		}
 
-        bool good = true;
-        CHECK_MISMATCH("uPC", 0, regs.mupc);
-        CHECK_MISMATCH("PC", final_state.regs.pc, regs.pc);
-        CHECK_MISMATCH("SP", final_state.regs.sp, regs.sp);
-        CHECK_MISMATCH("A", final_state.regs.a, regs.a);
-        CHECK_MISMATCH("B", final_state.regs.b, regs.b);
-        CHECK_MISMATCH("C", final_state.regs.c, regs.c);
-        CHECK_MISMATCH("D", final_state.regs.d, regs.d);
-        CHECK_MISMATCH("E", final_state.regs.e, regs.e);
+		bool good = true;
+		CHECK_MISMATCH("uPC", 0, regs.mupc);
+		CHECK_MISMATCH("PC", final_state.regs.pc, regs.pc);
+		CHECK_MISMATCH("SP", final_state.regs.sp, regs.sp);
+		CHECK_MISMATCH("A", final_state.regs.a, regs.a);
+		CHECK_MISMATCH("B", final_state.regs.b, regs.b);
+		CHECK_MISMATCH("C", final_state.regs.c, regs.c);
+		CHECK_MISMATCH("D", final_state.regs.d, regs.d);
+		CHECK_MISMATCH("E", final_state.regs.e, regs.e);
 
-        CHECK_MISMATCH_BIT("F", 'Z', final_state.regs.f & 0x80, regs.f & 0x80);
-        CHECK_MISMATCH_BIT("F", 'N', final_state.regs.f & 0x40, regs.f & 0x40);
-        CHECK_MISMATCH_BIT("F", 'H', final_state.regs.f & 0x20, regs.f & 0x20);
-        CHECK_MISMATCH_BIT("F", 'C', final_state.regs.f & 0x10, regs.f & 0x10);
+		CHECK_MISMATCH_BIT("F", 'Z', final_state.regs.f & 0x80, regs.f & 0x80);
+		CHECK_MISMATCH_BIT("F", 'N', final_state.regs.f & 0x40, regs.f & 0x40);
+		CHECK_MISMATCH_BIT("F", 'H', final_state.regs.f & 0x20, regs.f & 0x20);
+		CHECK_MISMATCH_BIT("F", 'C', final_state.regs.f & 0x10, regs.f & 0x10);
 
-        CHECK_MISMATCH("H", final_state.regs.h, regs.h);
-        CHECK_MISMATCH("L", final_state.regs.l, regs.l);
-        CHECK_MISMATCH("IME", final_state.regs.ime, regs.ime);
-        CHECK_MISMATCH("IE", final_state.regs.ie, regs.ie);
+		CHECK_MISMATCH("H", final_state.regs.h, regs.h);
+		CHECK_MISMATCH("L", final_state.regs.l, regs.l);
+		CHECK_MISMATCH("IME", final_state.regs.ime, regs.ime);
+		CHECK_MISMATCH("IE", final_state.regs.ie, regs.ie);
 		
-        for (auto& [addr, value] : final_state.memory) {
-            CHECK_MISMATCH(std::format("Memory 0x{:04X}", addr), value, mem.memory[addr]);
-        }
+		for (auto& [addr, value] : final_state.memory) {
+			CHECK_MISMATCH(std::format("Memory 0x{:04X}", addr), value, mem.memory[addr]);
+		}
 
-        return good;
-    }
+		return good;
+	}
 };
 
 void test_thread(std::span<const std::string> data, std::span<uint8_t> results) {
@@ -256,7 +256,7 @@ bool run_single_step_tests() {
 	const auto num_threads = std::thread::hardware_concurrency();
 	const auto per_thread = test_data.size() / num_threads;
 
-    std::vector<std::thread> threads{};
+	std::vector<std::thread> threads{};
 
 	std::span<const std::string> data_span{ test_data.data(), test_data.size() };
 	std::span<std::uint8_t> results_span{ test_results.data(), test_results.size() };
