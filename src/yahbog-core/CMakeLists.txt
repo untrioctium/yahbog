@@ -22,6 +22,8 @@ add_library(
     include/yahbog/impl/rom_impl.h
 
     include/yahbog/utility/constexpr_function.h
+
+    include/yahbog.h
     
     opinfo.cpp
     rom.cpp

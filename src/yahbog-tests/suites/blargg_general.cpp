@@ -1,5 +1,4 @@
 #include <yahbog-tests.h>
-#include <yahbog/emulator.h>
 
 namespace {
 
@@ -76,7 +75,6 @@ namespace {
 				return true;
 			} else if(serial_data.ends_with("Failed")) {
 				std::println("Test failed: {}", filename);
-				std::println("Serial data: {}", serial_data);
 				return false;
 			}
 		}

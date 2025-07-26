@@ -1,6 +1,4 @@
 #include <yahbog-tests.h>
-#include <yahbog/emulator.h>
-#include <yahbog/opinfo.h>
 
 #include <readerwritercircularbuffer.h>
 #include <termcolor/termcolor.hpp>

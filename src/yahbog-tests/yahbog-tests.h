@@ -1,5 +1,4 @@
-#include <yahbog/opinfo.h>
-#include <yahbog/cpu.h>
+#include <yahbog.h>
 
 #include <nlohmann/json.hpp>
 #include <termcolor/termcolor.hpp>

@@ -26,6 +26,8 @@ set_target_properties(yahbog-tests PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY ${CM
 
 target_include_directories(yahbog-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+target_precompile_headers(yahbog-tests PRIVATE yahbog-tests.h)
+
 target_link_libraries(
     yahbog-tests PRIVATE
     yahbog-core

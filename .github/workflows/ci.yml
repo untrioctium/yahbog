@@ -13,8 +13,8 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            cc: gcc-14
-            cxx: g++-14
+            cc: clang
+            cxx: clang++
             extension: ""
             subfolder: ""
           - os: windows-latest
@@ -29,7 +29,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake build-essential ${{ matrix.cc }} ${{ matrix.cxx }} python3 python3-pip
+        sudo apt-get install -y cmake build-essential ${{ matrix.cc }} ${{ matrix.cxx }} python3 python3-pip clang
         
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'

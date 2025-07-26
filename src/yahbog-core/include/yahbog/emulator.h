@@ -12,9 +12,29 @@
 
 namespace yahbog {
 
+	struct wram_t {
+		constexpr static auto address_range() {
+			return std::array{
+				address_range_t<wram_t>{0xC000, 0xDFFF, &wram_t::read<0xC000>, &wram_t::write<0xC000>},
+				address_range_t<wram_t>{0xE000, 0xFDFF, &wram_t::read<0xE000>, &wram_t::write<0xE000>}
+			};
+		}
+
+		template<std::size_t Offset>
+		constexpr uint8_t read(uint16_t addr) {
+			return wram[addr - Offset];
+		}
+
+		template<std::size_t Offset>
+		constexpr void write(uint16_t addr, uint8_t value) {
+			wram[addr - Offset] = value;
+		}
+
+		std::array<uint8_t, 0x2000> wram;
+	};
+
 	class emulator {
 	public:
-		using wram_t = simple_memory<0xC000, 0xDFFF>;
 		using hram_t = simple_memory<0xFF80, 0xFFFE>;
 
 		read_fn_t reader;
@@ -52,7 +72,6 @@ namespace yahbog {
 		using reader_hook_response = std::variant<std::monostate, std::uint8_t>;
 
 		constexpr void hook_reading(constexpr_function<reader_hook_response(std::uint16_t)>&& hook) noexcept {
-			auto base_reader = default_reader();
 			reader = [next = default_reader(), hook = std::move(hook)](std::uint16_t addr) {
 				auto response = hook(addr);
 				if (std::holds_alternative<std::uint8_t>(response)) {
@@ -63,7 +82,6 @@ namespace yahbog {
 		}
 
 		constexpr void hook_writing(constexpr_function<bool(std::uint16_t, std::uint8_t)>&& hook) noexcept {
-			auto base_writer = default_writer();
 			writer = [next = default_writer(), hook = std::move(hook)](std::uint16_t addr, std::uint8_t value) {
 				if (hook(addr, value)) {
 					return;
@@ -75,5 +93,7 @@ namespace yahbog {
 	private:
 
 	};
+
+	constexpr static auto emu_size = sizeof(emulator);
 
 }
