@@ -1,0 +1,57 @@
+add_executable(yahbog-gui main.cpp)
+
+set(ZLIB_ENABLE_TESTS OFF)
+set(ZLIB_COMPAT ON)
+# zlib
+FetchContent_Declare(
+  zlib
+  GIT_REPOSITORY https://github.com/zlib-ng/zlib-ng
+  GIT_TAG 2.2.4
+  OVERRIDE_FIND_PACKAGE
+  EXCLUDE_FROM_ALL
+  GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(zlib)
+add_library(ZLIB::ZLIB ALIAS zlib)
+set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" "${zlib_BINARY_DIR}")
+
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  glfw
+  GIT_REPOSITORY https://github.com/glfw/glfw.git
+  GIT_TAG 3.4
+)
+FetchContent_MakeAvailable(glfw)
+
+# glad
+FetchContent_Declare(
+  glad
+  GIT_REPOSITORY https://github.com/Dav1dde/glad.git
+  GIT_TAG master
+)
+FetchContent_MakeAvailable(glad)
+
+#imgui
+FetchContent_Declare(
+  imgui
+  GIT_REPOSITORY https://github.com/ocornut/imgui.git
+  GIT_TAG docking
+)
+FetchContent_MakeAvailable(imgui)
+file(GLOB IMGUI_SOURCES
+  ${imgui_SOURCE_DIR}/*.cpp
+  ${imgui_SOURCE_DIR}/misc/freetype/imgui_freetype.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+)
+add_library(imgui STATIC ${IMGUI_SOURCES})
+target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
+target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR}/backends)
+target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR}/misc/freetype)
+target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_FREETYPE)
+target_compile_definitions(imgui PUBLIC IMGUI_USE_WCHAR32)
+target_link_libraries(imgui PUBLIC freetype glfw glad)
+
+target_link_libraries(yahbog-gui PRIVATE imgui)

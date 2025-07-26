@@ -22,3 +22,4 @@ FetchContent_MakeAvailable(json)
 
 add_subdirectory(src/yahbog-core)
 add_subdirectory(src/yahbog-tests)
+add_subdirectory(src/yahbog-gui)
