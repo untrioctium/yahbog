@@ -17,9 +17,11 @@ jobs:
             cxx: clang++
             extension: ""
             subfolder: ""
+            ncpu: "$(nproc)"
           - os: windows-latest
             extension: ".exe"
             subfolder: "/Release"
+            ncpu: "%NUMBER_OF_PROCESSORS%"
     
     steps:
     - name: Checkout code
@@ -45,7 +47,8 @@ jobs:
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release
         
     - name: Build project
-      run: cmake --build build --config Release
+      run: |
+        cmake --build build --config Release -j${{ matrix.ncpu }}
       
     - name: Get testing dependencies
       run: |
