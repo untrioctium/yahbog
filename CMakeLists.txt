@@ -1,0 +1,24 @@
+cmake_minimum_required(VERSION 3.20)
+cmake_policy(SET CMP0135 NEW)
+project(yahbog)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if (CMAKE_BUILD_TYPE STREQUAL "Relese")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+endif()
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+include(FetchContent)
+
+# nlohmann/json
+FetchContent_Declare(
+    json 
+    URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+    URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa)
+FetchContent_MakeAvailable(json)
+
+add_subdirectory(src/yahbog-core)
+add_subdirectory(src/yahbog-tests)
