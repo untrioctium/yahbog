@@ -15,7 +15,11 @@ jobs:
           - os: ubuntu-latest
             cc: gcc-14
             cxx: g++-14
+            extension: ""
+            subfolder: ""
           - os: windows-latest
+            extension: ".exe"
+            subfolder: "/Release"
     
     steps:
     - name: Checkout code
@@ -25,7 +29,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake build-essential gcc-14 g++-14 libnghttp2-14 libnghttp2-dev libidn2-dev libidn2-0 libpsl-dev libpsl5t64
+        sudo apt-get install -y cmake build-essential ${{ matrix.cc }} ${{ matrix.cxx }} libnghttp2-14 libnghttp2-dev libidn2-dev libidn2-0 libpsl-dev libpsl5t64
         
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
@@ -41,14 +45,7 @@ jobs:
     - name: Build project
       run: cmake --build build --config Release
       
-    - name: Run tests (Linux)
-      if: matrix.os == 'ubuntu-latest'
+    - name: Run tests
       run: |
         cd build
-        ./src/yahbog-tests/yahbog-tests
-        
-    - name: Run tests (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        cd build
-        ./src/yahbog-tests/Release/yahbog-tests.exe 
+        ./src/yahbog-tests${{ matrix.subfolder }}/yahbog-tests${{ matrix.extension }}

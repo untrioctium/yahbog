@@ -1,12 +1,7 @@
-FetchContent_Declare(
-    any_invocable
-    GIT_REPOSITORY https://github.com/ofats/any_invocable
-    GIT_TAG master
-    EXCLUDE_FROM_ALL
-)
-FetchContent_MakeAvailable(any_invocable)
-
 # mimalloc
+set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
+set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(mimalloc URL https://github.com/microsoft/mimalloc/archive/refs/tags/v3.0.8.zip)
 FetchContent_MakeAvailable(mimalloc)
 
@@ -42,5 +37,4 @@ target_include_directories(
 target_include_directories(
     yahbog-core PUBLIC
     include
-    ${any_invocable_SOURCE_DIR}/include
 )

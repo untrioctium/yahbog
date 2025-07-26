@@ -20,9 +20,19 @@ FetchContent_Declare(termcolor URL https://github.com/ikalnytskyi/termcolor/arch
 FetchContent_MakeAvailable(termcolor)
 
 # libcurl
+set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_LIBCURL_DOCS OFF CACHE BOOL "" FORCE)
+set(BUILD_MISC_DOCS OFF CACHE BOOL "" FORCE)
+set(ENABLE_CURL_MANUAL OFF CACHE BOOL "" FORCE)
+set(HTTP_ONLY ON CACHE BOOL "" FORCE)
+
+if(WIN32)
+    set(CURL_USE_SCHANNEL ON CACHE BOOL "" FORCE)
+    set(CURL_WINDOWS_SSPI ON CACHE BOOL "" FORCE)
+endif()
+
 FetchContent_Declare(curl URL https://curl.se/download/curl-8.15.0.tar.xz)
-set(BUILD_CURL_EXE OFF FORCE)
-set(HTTP_ONLY ON)
 FetchContent_MakeAvailable(curl)
 
 # readerwriterqueue
@@ -43,4 +53,6 @@ target_link_libraries(
     readerwriterqueue
 )
 
-target_compile_options(yahbog-tests PRIVATE -O3 -march=native)
+if(UNIX)
+    target_compile_options(yahbog-tests PRIVATE -O3 -march=native)
+endif()
