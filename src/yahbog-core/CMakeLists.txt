@@ -29,6 +29,10 @@ add_library(
 
 target_link_libraries(yahbog-core PRIVATE mimalloc-static)
 
+if(WIN32)
+    target_compile_definitions(yahbog-core PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+endif()
+
 target_include_directories(
     yahbog-core PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

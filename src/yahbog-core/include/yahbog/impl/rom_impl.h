@@ -59,7 +59,7 @@ namespace yahbog {
         }
 
         rom_bank = 1;
-        ram_bank = std::numeric_limits<std::size_t>::max();
+        ram_bank = (std::numeric_limits<std::size_t>::max)();
 
         return true;
     }

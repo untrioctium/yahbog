@@ -5,6 +5,9 @@
 #include <array>
 #include <span>
 
+#include <format>
+#include <stdexcept>
+
 namespace yahbog {
 
 	template<typename T>
@@ -35,20 +38,15 @@ namespace yahbog {
 	};
 
 	template<typename T>
-	concept addressable_concept = (
-		requires(T) {
-			{ T::address_range() } -> std::convertible_to<address_range_t<T>>;
-		} 
-		|| requires(T) {
-			T::address_range().begin(); T::address_range().end();
-			{ *T::address_range().begin() } -> std::convertible_to<address_range_t<T>>;
-		}
-	);
+	concept addressable_concept = requires(T) {
+		T::address_range().begin(); T::address_range().end();
+		{ *T::address_range().begin() } -> std::convertible_to<address_range_t<T>>;
+	};
 
 	template<std::size_t AddressStart, std::size_t AddressEnd>
 	struct simple_memory {
 		consteval static auto address_range() {
-			return address_range_t<simple_memory>{ AddressStart, AddressEnd, &simple_memory::read, &simple_memory::write };
+			return std::array{ address_range_t<simple_memory>{ AddressStart, AddressEnd, &simple_memory::read, &simple_memory::write } };
 		}
 
 		std::array<uint8_t, AddressEnd - AddressStart + 1> memory{};
@@ -87,20 +85,28 @@ namespace yahbog {
 			write_fn_t write;
 		};
 
+		template<typename Handler, std::size_t Index>
+		constexpr static auto make_jump_pair_for_range() {
+			constexpr auto info = Handler::address_range()[Index];
+			constexpr auto idx = detail::index_of<Handler, Handlers...>();
+			return jump_pair{
+				[](storage_t& handlers, uint16_t addr) constexpr -> uint8_t {
+					constexpr auto range_info = Handler::address_range()[Index];
+					return (std::get<idx>(handlers)->*(range_info.read_fn))(addr);
+				},
+				[](storage_t& handlers, uint16_t addr, uint8_t data) constexpr -> void {
+					constexpr auto range_info = Handler::address_range()[Index];
+					(std::get<idx>(handlers)->*(range_info.write_fn))(addr, data);
+				}
+			};
+		}
+
 		template<typename Handler, std::size_t... Indices>
     	constexpr static void fill_table_for_handler(auto& table, std::index_sequence<Indices...>) {
-			constexpr auto idx = detail::index_of<Handler, Handlers...>();
-			
-			([&table] {
-				constexpr static auto info = Handler::address_range()[Indices];
-				std::fill(table.begin() + info.start, table.begin() + info.end + 1, jump_pair{
-					[](storage_t& handlers, uint16_t addr) -> uint8_t {
-						return (std::get<idx>(handlers)->*(info.read_fn))(addr);
-					},
-					[](storage_t& handlers, uint16_t addr, uint8_t data) -> void {
-						(std::get<idx>(handlers)->*(info.write_fn))(addr, data);
-					}
-				});
+			([&table]() constexpr {
+				constexpr auto info = Handler::address_range()[Indices];
+				constexpr auto jump_pair_value = make_jump_pair_for_range<Handler, Indices>();
+				std::fill(table.begin() + info.start, table.begin() + info.end + 1, jump_pair_value);
 			}(), ...);
     	}
 
@@ -109,27 +115,10 @@ namespace yahbog {
 
 			table.fill({nullptr, nullptr});
 
-			([](auto& table) {
-
-				constexpr auto idx = detail::index_of<Handlers, Handlers...>();
-				
-				constexpr static auto addr_range = Handlers::address_range();
-
-				if constexpr (std::is_same_v<decltype(addr_range), const address_range_t<Handlers>>) {
-					std::fill(table.begin() + addr_range.start, table.begin() + addr_range.end + 1, jump_pair{
-						[](storage_t& handlers, uint16_t addr) {
-							return (std::get<idx>(handlers)->*(addr_range.read_fn))(addr);
-						},
-						[](storage_t& handlers, uint16_t addr, uint8_t data) {
-							(std::get<idx>(handlers)->*(addr_range.write_fn))(addr, data);
-						}
-					});
-				}
-				else {
-                	fill_table_for_handler<Handlers>(table, std::make_index_sequence<addr_range.size()>{});
-				}
-
-			}(table), ...);
+			([]<typename Handler>(auto& table) constexpr {
+				constexpr auto addr_range = Handler::address_range();
+                fill_table_for_handler<Handler>(table, std::make_index_sequence<addr_range.size()>{});
+			}.template operator()<Handlers>(table), ...);
 
 			return table;
 		}();

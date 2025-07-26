@@ -120,7 +120,7 @@ void print_colored_diff(std::string_view expected, std::string_view actual) {
     
     // Print expected line
     std::cout << "E: ";
-    size_t max_sections = std::max(expected_sections.size(), actual_sections.size());
+    size_t max_sections = (std::max)(expected_sections.size(), actual_sections.size());
     
     for (size_t i = 0; i < max_sections; ++i) {
         if (i > 0) std::cout << " ";
@@ -340,7 +340,7 @@ static bool run_test(const std::filesystem::path& rom_path) {
         }
 
         if(expected != my_log) {
-            constexpr static auto format_interrupts = [](std::uint8_t reg) {
+            constexpr auto format_interrupts = [](std::uint8_t reg) {
                 return std::format("{}{}{}{}{}",
                     (reg & 16) ? "J" : ".",
                     (reg & 8) ? "S" : ".",

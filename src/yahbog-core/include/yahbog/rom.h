@@ -68,7 +68,7 @@ namespace yahbog {
 
 	private:
 
-		constexpr bool ram_enabled() const { return ram_bank != std::numeric_limits<std::size_t>::max(); }
+		constexpr bool ram_enabled() const { return ram_bank != (std::numeric_limits<std::size_t>::max)(); }
 
 		constexpr static auto rom_bank_size = 0x4000; // 16KB
 		constexpr static auto ram_bank_size = 0x2000; // 8KB
@@ -77,7 +77,7 @@ namespace yahbog {
 		std::vector<std::uint8_t> ext_ram;
 		rom_header_t header_;
 		std::size_t rom_bank;
-		std::size_t ram_bank = std::numeric_limits<std::size_t>::max();
+		std::size_t ram_bank = (std::numeric_limits<std::size_t>::max)();
 	};
 
 }
