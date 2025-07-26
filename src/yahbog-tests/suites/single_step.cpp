@@ -200,13 +200,9 @@ bool run_single_step_tests() {
 
 	std::println("Loading tests from {}", TEST_DATA_DIR);
 
-	if (!std::filesystem::exists(TEST_DATA_DIR)) {
-		std::filesystem::create_directory(TEST_DATA_DIR);
-	}
-
-	if (!std::filesystem::exists(TEST_DATA_DIR "/sm83.zip")) {
-		std::println("Downloading tests from {}", TEST_DATA_DIR "/sm83.zip");
-		download_to_path("https://github.com/SingleStepTests/sm83/archive/refs/heads/main.zip", TEST_DATA_DIR "/sm83.zip");
+	if(!std::filesystem::exists(TEST_DATA_DIR "/sm83.zip")) {
+		std::println("sm83.zip not found, please run scripts/get_testing_deps.py");
+		return false;
 	}
 
 	std::println("Opening archive: {}", TEST_DATA_DIR "/sm83.zip");

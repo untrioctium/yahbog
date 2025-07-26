@@ -29,7 +29,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake build-essential ${{ matrix.cc }} ${{ matrix.cxx }} libnghttp2-14 libnghttp2-dev libidn2-dev libidn2-0 libpsl-dev libpsl5t64
+        sudo apt-get install -y cmake build-essential ${{ matrix.cc }} ${{ matrix.cxx }} python3 python3-pip
         
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
@@ -45,7 +45,11 @@ jobs:
     - name: Build project
       run: cmake --build build --config Release
       
+    - name: Get testing dependencies
+      run: |
+        pip install requests
+        python3 scripts/get_testing_deps.py
+
     - name: Run tests
       run: |
-        cd build
-        ./src/yahbog-tests${{ matrix.subfolder }}/yahbog-tests${{ matrix.extension }}
+        ./build/src/yahbog-tests${{ matrix.subfolder }}/yahbog-tests${{ matrix.extension }}

@@ -31,34 +31,6 @@ struct test_info {
 };
 
 #define BASE_DIR TEST_DATA_DIR "/blargg/cpu_instrs"
-#define ROM_DIR BASE_DIR "/roms"
-#define LOG_DIR BASE_DIR "/logs"
-
-#define GIT_ROM_BASE "https://github.com/retrio/gb-test-roms/raw/refs/heads/master/cpu_instrs/individual"
-#define GIT_LOG_BASE "https://github.com/robert/gameboy-doctor/raw/refs/heads/master/truth/zipped/cpu_instrs"
-
-#define MAKE_TEST(desc, rom_name, log_name) \
-    test_info{ \
-        .name = desc, \
-        .rom_src = GIT_ROM_BASE "/" rom_name, \
-        .rom_path = ROM_DIR "/" desc ".gb", \
-        .log_src = GIT_LOG_BASE "/" log_name, \
-        .log_path = LOG_DIR "/" log_name \
-    }
-
-constexpr auto tests = std::array<test_info, 11>{
-    MAKE_TEST("01-special", "01-special.gb", "1.zip"),
-    MAKE_TEST("02-interrupts", "02-interrupts.gb", "2.zip"),
-    MAKE_TEST("03-op sp,hl", "03-op%20sp%2Chl.gb", "3.zip"),
-    MAKE_TEST("04-op r,imm", "04-op%20r%2Cimm.gb", "4.zip"),
-    MAKE_TEST("05-op rp", "05-op%20rp.gb", "5.zip"),
-    MAKE_TEST("06-ld r,r", "06-ld%20r%2Cr.gb", "6.zip"),
-    MAKE_TEST("07-jr,jp,call,ret,rst", "07-jr%2Cjp%2Ccall%2Cret%2Crst.gb", "7.zip"),
-    MAKE_TEST("08-misc instrs", "08-misc%20instrs.gb", "8.zip"),
-    MAKE_TEST("09-op r,r", "09-op%20r%2Cr.gb", "9.zip"),
-    MAKE_TEST("10-bit ops", "10-bit%20ops.gb", "10.zip"),
-    MAKE_TEST("11-op a,(hl)", "11-op%20a%2C(hl).gb", "11.zip")
-};
 
 struct decompress_thread_state {
     std::string_view log_path;
@@ -263,30 +235,33 @@ void decompress_thread(decompress_thread_state&& state) {
 
 
 
-static bool run_test(const test_info& test) {
-    std::println("Running test: {}", test.name);
+static bool run_test(const std::filesystem::path& rom_path) {
+    auto filename = rom_path.filename().string();
+    std::println("Running test: {}", filename);
 
-    if (!std::filesystem::exists(test.rom_path)) {
-        std::println("Downloading rom: {}", test.rom_src);
-        if (!download_to_path(test.rom_src, test.rom_path)) {
-            std::println("Failed to download rom");
-            return false;
-        }
+    auto number_start = filename.find_first_not_of("0");
+    auto number_end = filename.find_first_of('-');
+
+    if(number_start == std::string::npos || number_end == std::string::npos) {
+        std::println("Invalid filename: {}", filename);
+        return false;
     }
 
-    if (!std::filesystem::exists(test.log_path)) {
-        std::println("Downloading log: {}", test.log_src);
-        if (!download_to_path(test.log_src, test.log_path)) {
-            std::println("Failed to download log");
-            return false;
-        }
+    auto number = filename.substr(number_start, number_end - number_start);
+    auto log_filename = std::format("{}.zip", number);
+    auto log_path = rom_path.parent_path() / log_filename;
+
+    if (!std::filesystem::exists(log_path)) {
+        std::println("Log file not found: {}", log_path.string());
+        return false;
     }
 
     moodycamel::BlockingReaderWriterCircularBuffer<std::string> log_queue(1024);
     std::stop_source execution_done;
 
+    auto log_string = log_path.string();
     decompress_thread_state state = {
-        .log_path = test.log_path,
+        .log_path = log_string,
         .log_queue = &log_queue,
         .execution_done = execution_done.get_token()
     };
@@ -326,7 +301,7 @@ static bool run_test(const test_info& test) {
     regs.sp = 0xFFFE; regs.pc = 0x0100;
 
     emu->z80.load_registers(regs);
-    emu->rom.load_rom(test.rom_path);
+    emu->rom.load_rom(rom_path.string());
 
     auto& cpu = emu->z80;
     auto& mem = emu->mmu;
@@ -374,7 +349,7 @@ static bool run_test(const test_info& test) {
                     (reg & 1) ? "V" : "."
                 );
             };
-            std::println("Test failed: {}", test.name);
+            std::println("Test failed: {}", filename);
             std::println("Last instruction: {:02X} ({}) ({} executed)", next_instruction, yahbog::opinfo[next_instruction].name, instruction_count);
             std::println("Interrupts: IME:{} IF:{} IE:{}", cpu.r().ime, format_interrupts(emu->mmu.read(0xFF0F)), format_interrupts(emu->mmu.read(0xFFFF)));
             for(const auto& log : logs) {
@@ -397,11 +372,21 @@ bool run_blargg_cpu_instrs() {
 
     std::println("Running blargg CPU instruction tests with Gameboy Doctor logs");
 
-    std::filesystem::create_directories(ROM_DIR);
-    std::filesystem::create_directories(LOG_DIR);
+    std::vector<std::filesystem::path> roms{};
 
-    for (const auto& test : tests) {
-        run_test(test);
+    // find all .gb files in the cpu_instrs directory
+    for(const auto& entry : std::filesystem::directory_iterator(BASE_DIR)) {
+        if(entry.is_regular_file() && entry.path().extension() == ".gb") {
+            roms.push_back(entry.path());
+        }
+    }
+
+    std::sort(roms.begin(), roms.end());
+
+    for(const auto& rom : roms) {
+        if(!run_test(rom)) {
+            return false;
+        }
     }
 
     return true;

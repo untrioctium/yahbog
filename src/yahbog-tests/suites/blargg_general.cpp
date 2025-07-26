@@ -11,33 +11,10 @@ namespace {
     };
 
     #define BASE_DIR TEST_DATA_DIR "/blargg/general"
-    #define GIT_ROM_BASE "https://github.com/retrio/gb-test-roms/raw/refs/heads/master"
 
-    #define MAKE_TEST(desc, rom_name) \
-        test_info{ \
-            .name = desc, \
-            .rom_src = GIT_ROM_BASE "/" rom_name, \
-            .rom_path = BASE_DIR "/" desc ".gb" \
-        }
-
-    constexpr auto tests = std::array<test_info, 5>{
-        MAKE_TEST("instr_timing", "instr_timing/instr_timing.gb"),
-        MAKE_TEST("interrupts", "cpu_instrs/individual/02-interrupts.gb"),
-        MAKE_TEST("01-read_timing", "mem_timing/individual/01-read_timing.gb"),
-        MAKE_TEST("02-write_timing", "mem_timing/individual/02-write_timing.gb"),
-        MAKE_TEST("03-modify_timing", "mem_timing/individual/03-modify_timing.gb")
-    };
-
-    bool run_test(const test_info& test) {
-        std::println("Running test: {}", test.name);
-
-        if (!std::filesystem::exists(test.rom_path)) {
-            std::println("Downloading rom: {}", test.rom_src);
-            if (!download_to_path(test.rom_src, test.rom_path)) {
-                std::println("Failed to download rom");
-                return false;
-            }
-        }
+    bool run_test(const std::filesystem::path& rom_path) {
+        auto filename = rom_path.filename().string();
+        std::println("Running test: {}", filename);
 
         auto emu = std::make_unique<yahbog::emulator>();
         std::string serial_data{};
@@ -87,7 +64,7 @@ namespace {
         regs.sp = 0xFFFE; regs.pc = 0x0100;
 
         emu->z80.load_registers(regs);
-        emu->rom.load_rom(test.rom_path);
+        emu->rom.load_rom(rom_path.string());
 
         auto& cpu = emu->z80;
         auto& mem = emu->mmu;
@@ -98,7 +75,7 @@ namespace {
             if(serial_data.ends_with("Passed")) {
                 return true;
             } else if(serial_data.ends_with("Failed")) {
-                std::println("Test failed: {}", test.name);
+                std::println("Test failed: {}", filename);
                 std::println("Serial data: {}", serial_data);
                 return false;
             }
@@ -111,10 +88,20 @@ namespace {
 bool run_blargg_general() {
     std::println("Running blargg general tests");
 
-    std::filesystem::create_directories(BASE_DIR);
+    std::vector<std::filesystem::path> roms{};
 
-    for(const auto& test : tests) {
-        run_test(test);
+    for(const auto& entry : std::filesystem::directory_iterator(BASE_DIR)) {
+        if(entry.is_regular_file() && entry.path().extension() == ".gb") {
+            roms.push_back(entry.path());
+        }
+    }
+
+    std::sort(roms.begin(), roms.end());
+
+    for(const auto& rom : roms) {
+        if(!run_test(rom)) {
+            return false;
+        }
     }
 
     return true;
