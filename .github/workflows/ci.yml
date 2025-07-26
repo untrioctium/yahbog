@@ -17,12 +17,12 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake build-essential gcc-15 g++-15
+        sudo apt-get install -y cmake build-essential gcc-14 g++-14
         
     - name: Configure CMake
       run: |
-        export CC=gcc-15
-        export CXX=g++-15
+        export CC=gcc-14
+        export CXX=g++-14
         cmake -B build -DCMAKE_BUILD_TYPE=Release
         
     - name: Build project
