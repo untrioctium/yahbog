@@ -86,8 +86,7 @@ namespace yahbog {
 		};
 
 		template<typename Handler, std::size_t Index>
-		constexpr static auto make_jump_pair_for_range() {
-			constexpr auto info = Handler::address_range()[Index];
+		consteval static auto make_jump_pair_for_range() {
 			constexpr auto idx = detail::index_of<Handler, Handlers...>();
 			return jump_pair{
 				[](storage_t& handlers, uint16_t addr) constexpr -> uint8_t {
@@ -110,7 +109,7 @@ namespace yahbog {
 			}(), ...);
 		}
 
-		constexpr static std::array<jump_pair, NumAddresses> jump_table = [] {
+		constexpr static std::array<jump_pair, NumAddresses> jump_table = []() consteval {
 			std::array<jump_pair, NumAddresses> table{};
 
 			table.fill({nullptr, nullptr});

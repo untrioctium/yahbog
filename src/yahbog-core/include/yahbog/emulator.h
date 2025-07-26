@@ -13,7 +13,7 @@
 namespace yahbog {
 
 	struct wram_t {
-		constexpr static auto address_range() {
+		consteval static auto address_range() {
 			return std::array{
 				address_range_t<wram_t>{0xC000, 0xDFFF, &wram_t::read<0xC000>, &wram_t::write<0xC000>},
 				address_range_t<wram_t>{0xE000, 0xFDFF, &wram_t::read<0xE000>, &wram_t::write<0xE000>}
