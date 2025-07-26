@@ -4,25 +4,74 @@
 #include <yahbog/registers.h>
 
 namespace yahbog {
-	class gpu : public addressable {
+	class gpu {
 	public:
-		constexpr static auto address_range = std::array{
-			address_range_t{ 0x8000, 0x9FFF },
-			address_range_t{ 0xFE00, 0xFE9F },
-			address_range_t{ 0xFF40, 0xFF4B },
-			address_range_t{ 0xFF4F, 0xFF4F }
+
+		constexpr void tick(std::uint8_t cycles);
+		constexpr const auto& framebuffer() const { return m_framebuffer; }
+		constexpr bool framebuffer_ready() const { return mode == mode_t::vblank; }
+
+		constexpr uint8_t read(uint16_t addr);
+		constexpr void write(uint16_t addr, uint8_t value);
+
+		consteval static auto address_range() {
+			return std::array{
+				address_range_t<gpu>{ 0x8000, 0x9FFF, &gpu::read_vram, &gpu::write_vram },
+				address_range_t<gpu>{ 0xFE00, 0xFE9F, &gpu::read_oam, &gpu::write_oam },
+				address_range_t<gpu>{ 0xFF40, 0xFF40, &gpu::read_register<&gpu::lcdc>, &gpu::write_register<&gpu::lcdc> },
+				address_range_t<gpu>{ 0xFF41, 0xFF41, &gpu::read_register<&gpu::lcd_status>, &gpu::write_register<&gpu::lcd_status> },
+				address_range_t<gpu>{ 0xFF42, 0xFF42, &gpu::read_member<&gpu::scy>, &gpu::write_member<&gpu::scy> },
+				address_range_t<gpu>{ 0xFF43, 0xFF43, &gpu::read_member<&gpu::scx>, &gpu::write_member<&gpu::scx> },
+				address_range_t<gpu>{ 0xFF44, 0xFF44, &gpu::read_member<&gpu::ly>, &gpu::write_member<&gpu::ly> },
+				address_range_t<gpu>{ 0xFF45, 0xFF45, &gpu::read_member<&gpu::lyc>, &gpu::write_member<&gpu::lyc> },
+				address_range_t<gpu>{ 0xFF46, 0xFF46, &gpu::read_member<&gpu::dma>, &gpu::write_member<&gpu::dma> },
+				address_range_t<gpu>{ 0xFF47, 0xFF47, &gpu::read_register<&gpu::bgp>, &gpu::write_register<&gpu::bgp> },
+				address_range_t<gpu>{ 0xFF48, 0xFF48, &gpu::read_register<&gpu::obp0>, &gpu::write_register<&gpu::obp0> },
+				address_range_t<gpu>{ 0xFF49, 0xFF49, &gpu::read_register<&gpu::obp1>, &gpu::write_register<&gpu::obp1> },
+				address_range_t<gpu>{ 0xFF4A, 0xFF4A, &gpu::read_member<&gpu::wy>, &gpu::write_member<&gpu::wy> },
+				address_range_t<gpu>{ 0xFF4B, 0xFF4B, &gpu::read_member<&gpu::wx>, &gpu::write_member<&gpu::wx> }
+			};
 		};
-
-		void tick(std::uint8_t cycles);
-		const auto& framebuffer() const { return m_framebuffer; }
-		bool framebuffer_ready() const { return mode == mode_t::vblank; }
-
-		uint8_t read(uint16_t addr) override;
-		void write(uint16_t addr, uint8_t value) override;
 
 	private:
 
-		void render_scanline();
+		template<auto RegisterPtr>
+		constexpr uint8_t read_register([[maybe_unused]] uint16_t addr) {
+			return (this->*RegisterPtr).read();
+		}
+
+		template<auto RegisterPtr>
+		constexpr void write_register([[maybe_unused]] uint16_t addr, uint8_t value) {
+			(this->*RegisterPtr).write(value);
+		}
+
+		template<auto MemberPtr>
+		constexpr uint8_t read_member([[maybe_unused]] uint16_t addr) {
+			return this->*MemberPtr;
+		}
+
+		template<auto MemberPtr>
+		constexpr void write_member([[maybe_unused]] uint16_t addr, uint8_t value) {
+			this->*MemberPtr = value;
+		}
+
+		constexpr uint8_t read_vram(uint16_t addr) {
+			return vram[addr - 0x8000];
+		}
+
+		constexpr void write_vram(uint16_t addr, uint8_t value) {
+			vram[addr - 0x8000] = value;
+		}
+
+		constexpr uint8_t read_oam(uint16_t addr) {
+			return oam[addr - 0xFE00];
+		}
+
+		constexpr void write_oam(uint16_t addr, uint8_t value) {
+			oam[addr - 0xFE00] = value;
+		}
+
+		constexpr void render_scanline();
 
 		enum class mode_t {
 			hblank = 0,
@@ -67,6 +116,8 @@ namespace yahbog {
 			std::uint8_t mode1 : 1;
 			std::uint8_t mode2 : 1;
 			std::uint8_t lyc_condition : 1;
+
+			std::uint8_t _unused : 1;
 		};
 		io_register<lcd_status_t> lcd_status{};
 

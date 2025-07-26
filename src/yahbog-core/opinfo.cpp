@@ -914,11 +914,11 @@ namespace yahbog {
         };
 
         ops[0xE3] = {
-            .name = "ILLEGAL_E3"
+            .name = "ISR $40"
         };
 
         ops[0xE4] = {
-            .name = "ILLEGAL_E4"
+            .name = "ISR $48"
         };
 
         ops[0xE5] = {
@@ -946,15 +946,15 @@ namespace yahbog {
         };
 
         ops[0xEB] = {
-            .name = "ILLEGAL_EB"
+            .name = "ISR $50"
         };
 
         ops[0xEC] = {
-            .name = "ILLEGAL_EC"
+            .name = "ISR $58"
         };
 
         ops[0xED] = {
-            .name = "ILLEGAL_ED"
+            .name = "ISR $60"
         };
 
         ops[0xEE] = {

@@ -35,3 +35,4 @@ build/
 testdata/
 .vscode/
 .cursor/
+*.log

@@ -6,39 +6,58 @@
 #include <span>
 
 namespace yahbog {
-	struct addressable {
-		virtual uint8_t read(uint16_t addr) = 0;
-		virtual void write(uint16_t addr, uint8_t data) = 0;
 
-		virtual ~addressable() = default;
-	};
-
+	template<typename T>
 	struct address_range_t {
 		uint16_t start;
 		uint16_t end;
+
+		using read_fn_t = uint8_t (T::*)(uint16_t);
+		using write_fn_t = void (T::*)(uint16_t, uint8_t);
+
+		read_fn_t read_fn;
+		write_fn_t write_fn;
+
+		consteval address_range_t(uint16_t start, uint16_t end, read_fn_t read_fn, write_fn_t write_fn) : start(start), end(end), read_fn(read_fn), write_fn(write_fn) {}
 	};
 
 	template<typename T>
-	concept addressable_concept = std::is_base_of_v<addressable, T> && (
+	struct memory_helpers {
+		template<auto MemberPtr>
+		constexpr uint8_t read_member_byte([[maybe_unused]] uint16_t addr) {
+			return static_cast<T*>(this)->*MemberPtr;
+		}
+
+		template<auto MemberPtr>
+		constexpr void write_member_byte([[maybe_unused]] uint16_t addr, uint8_t value) {
+			static_cast<T*>(this)->*MemberPtr = value;
+		}
+	};
+
+	template<typename T>
+	concept addressable_concept = (
 		requires(T) {
-			{ T::address_range } -> std::convertible_to<address_range_t>;
+			{ T::address_range() } -> std::convertible_to<address_range_t<T>>;
 		} 
 		|| requires(T) {
-			T::address_range.begin(); T::address_range.end();
+			T::address_range().begin(); T::address_range().end();
+			{ *T::address_range().begin() } -> std::convertible_to<address_range_t<T>>;
 		}
 	);
 
 	template<std::size_t AddressStart, std::size_t AddressEnd>
-	struct simple_memory : addressable {
-		constexpr static address_range_t address_range = { AddressStart, AddressEnd };
+	struct simple_memory {
+		consteval static auto address_range() {
+			return address_range_t<simple_memory>{ AddressStart, AddressEnd, &simple_memory::read, &simple_memory::write };
+		}
 
 		std::array<uint8_t, AddressEnd - AddressStart + 1> memory{};
 
-		uint8_t read(uint16_t addr) {
+		constexpr uint8_t read(uint16_t addr) {
 			return memory[addr - AddressStart];
 		}
 
-		void write(uint16_t addr, uint8_t data) {
+		constexpr void write(uint16_t addr, uint8_t data) {
 			memory[addr - AddressStart] = data;
 		}
 	};
@@ -55,36 +74,59 @@ namespace yahbog {
 	}
 
 	template<std::size_t NumAddresses, addressable_concept... Handlers>
-	class memory_dispatcher : public addressable {
+	class memory_dispatcher {
 
-		using storage_t = std::array<addressable*, sizeof...(Handlers)>;
+		using storage_t = std::array<void*, sizeof...(Handlers)>;
 		storage_t m_handlers{};
 
-		using jump_fn = addressable * (*)(const storage_t&, uint16_t);
+		struct jump_pair {
+			using read_fn_t = uint8_t (*)(storage_t&, uint16_t);
+			using write_fn_t = void (*)(storage_t&, uint16_t, uint8_t);
 
-		constexpr static std::array<jump_fn, sizeof...(Handlers)> jump_handlers = {
-			[](const storage_t& handlers, uint16_t addr) {
-				return handlers[detail::index_of<Handlers, Handlers...>()];
-			}...
+			read_fn_t read;
+			write_fn_t write;
 		};
 
-		constexpr static std::array<jump_fn, NumAddresses> jump_table = [] {
-			std::array<jump_fn, NumAddresses> table{};
+		template<typename Handler, std::size_t... Indices>
+    	constexpr static void fill_table_for_handler(auto& table, std::index_sequence<Indices...>) {
+			constexpr auto idx = detail::index_of<Handler, Handlers...>();
+			
+			([&table] {
+				constexpr static auto info = Handler::address_range()[Indices];
+				std::fill(table.begin() + info.start, table.begin() + info.end + 1, jump_pair{
+					[](storage_t& handlers, uint16_t addr) -> uint8_t {
+						return (static_cast<Handler*>(handlers[idx])->*(info.read_fn))(addr);
+					},
+					[](storage_t& handlers, uint16_t addr, uint8_t data) -> void {
+						(static_cast<Handler*>(handlers[idx])->*(info.write_fn))(addr, data);
+					}
+				});
+			}(), ...);
+    	}
 
-			table.fill([](const storage_t& handlers, uint16_t addr) -> addressable* { return nullptr; });
+		constexpr static std::array<jump_pair, NumAddresses> jump_table = [] {
+			std::array<jump_pair, NumAddresses> table{};
+
+			table.fill({nullptr, nullptr});
 
 			([](auto& table) {
 
 				constexpr auto idx = detail::index_of<Handlers, Handlers...>();
 				
-				if constexpr (std::is_same_v<decltype(Handlers::address_range), const address_range_t>) {
-					const auto range = Handlers::address_range;
-					std::fill(table.begin() + range.start, table.begin() + range.end + 1, jump_handlers[idx]);
+				constexpr static auto addr_range = Handlers::address_range();
+
+				if constexpr (std::is_same_v<decltype(addr_range), const address_range_t<Handlers>>) {
+					std::fill(table.begin() + addr_range.start, table.begin() + addr_range.end + 1, jump_pair{
+						+[](storage_t& handlers, uint16_t addr) {
+							return (static_cast<Handlers*>(handlers[idx])->*(addr_range.read_fn))(addr);
+						},
+						+[](storage_t& handlers, uint16_t addr, uint8_t data) {
+							(static_cast<Handlers*>(handlers[idx])->*(addr_range.write_fn))(addr, data);
+						}
+					});
 				}
 				else {
-					for (const auto& range : Handlers::address_range) {
-						std::fill(table.begin() + range.start, table.begin() + range.end + 1, jump_handlers[idx]);
-					}
+                	fill_table_for_handler<Handlers>(table, std::make_index_sequence<addr_range.size()>{});
 				}
 
 			}(table), ...);
@@ -93,32 +135,35 @@ namespace yahbog {
 		}();
 
 	public:
-		bool all_valid() const {
-			return (m_handlers[detail::index_of<Handlers, Handlers...>].get() && ...);
+
+		constexpr static auto table_size_bytes = sizeof(jump_table);
+
+		constexpr bool all_valid() const {
+			return ((m_handlers[detail::index_of<Handlers, Handlers...>] != nullptr) && ...);
 		}
 
 		template<typename T>
-		void set_handler(T* handler) {
+		constexpr void set_handler(T* handler) {
 			constexpr auto idx = detail::index_of<T, Handlers...>();
 			static_assert(idx < sizeof...(Handlers), "Handler not found");
 
 			m_handlers[idx] = handler;
 		}
 
-		uint8_t read(uint16_t addr) override {
-			auto handler = jump_table[addr](m_handlers, addr);
+		constexpr uint8_t read(uint16_t addr) {
+			auto handler = jump_table[addr].read;
 			if (handler) {
-				return handler->read(addr);
+				return handler(m_handlers, addr);
 			}
-			else throw std::out_of_range(std::format("No handler found for address: {:04X}", addr));
+			else throw std::out_of_range(std::format("No read handler found for address: {:04X}", addr));
 		}
 
-		void write(uint16_t addr, uint8_t data) override {
-			auto handler = jump_table[addr](m_handlers, addr);
+		constexpr void write(uint16_t addr, uint8_t data) {
+			auto handler = jump_table[addr].write;
 			if (handler) {
-				handler->write(addr, data);
+				handler(m_handlers, addr, data);
 			}
-			else throw std::out_of_range(std::format("No handler found for address: {:04X}", addr));
+			else throw std::out_of_range(std::format("No write handler found for address: {:04X}", addr));
 		}
 	};
 

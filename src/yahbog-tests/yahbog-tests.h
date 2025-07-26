@@ -22,3 +22,4 @@ void clear_console_line();
 
 bool run_single_step_tests();
 bool run_blargg_cpu_instrs();
+bool run_blargg_general();

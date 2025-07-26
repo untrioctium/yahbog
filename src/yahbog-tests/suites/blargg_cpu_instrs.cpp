@@ -1,8 +1,8 @@
 #include <yahbog-tests.h>
-#include <yahbog/cpu.h>
+#include <yahbog/emulator.h>
 #include <yahbog/opinfo.h>
 
-#include <readerwriterqueue.h>
+#include <readerwritercircularbuffer.h>
 #include <termcolor/termcolor.hpp>
 
 #include <array>
@@ -10,6 +10,15 @@
 #include <fstream>
 #include <iostream>
 #include <vector>
+#include <format>
+
+// outputs in the format:
+// A:00 F:11 B:22 C:33 D:44 E:55 H:66 L:77 SP:8888 PC:9999 PCMEM:AA,BB,CC,DD
+std::string gameboy_doctor_log(const yahbog::registers& reg, const auto& mem_read_fn) {
+    return std::format("A:{:02X} F:{:02X} B:{:02X} C:{:02X} D:{:02X} E:{:02X} H:{:02X} L:{:02X} SP:{:04X} PC:{:04X} PCMEM:{:02X},{:02X},{:02X},{:02X}",
+        reg.a, reg.f, reg.b, reg.c, reg.d, reg.e, reg.h, reg.l, reg.sp, reg.pc - 1,
+        mem_read_fn(reg.pc - 1), mem_read_fn(reg.pc), mem_read_fn(reg.pc + 1), mem_read_fn(reg.pc + 2));
+}
 
 struct test_info {
     std::string_view name;
@@ -53,7 +62,7 @@ constexpr auto tests = std::array<test_info, 11>{
 
 struct decompress_thread_state {
     std::string_view log_path;
-    moodycamel::BlockingReaderWriterQueue<std::string>* log_queue;
+    moodycamel::BlockingReaderWriterCircularBuffer<std::string>* log_queue;
     std::stop_source logs_done;
     std::stop_token  execution_done;
     std::string error_message;
@@ -254,7 +263,7 @@ void decompress_thread(decompress_thread_state&& state) {
 
 
 
-bool run_test(const test_info& test) {
+static bool run_test(const test_info& test) {
     std::println("Running test: {}", test.name);
 
     if (!std::filesystem::exists(test.rom_path)) {
@@ -273,7 +282,7 @@ bool run_test(const test_info& test) {
         }
     }
 
-    moodycamel::BlockingReaderWriterQueue<std::string> log_queue;
+    moodycamel::BlockingReaderWriterCircularBuffer<std::string> log_queue(1024);
     std::stop_source execution_done;
 
     decompress_thread_state state = {
@@ -287,14 +296,27 @@ bool run_test(const test_info& test) {
     std::jthread dt(decompress_thread, std::move(state));
     DEFER(execution_done.request_stop());
 
-    auto mem = yahbog::simple_memory<0x0000, 0xFFFF>{};
-    mem.write(0xFF44, 0x90);
+    auto emu = std::make_unique<yahbog::emulator>();
+    emu->hook_writing([](uint16_t addr, uint8_t value) {
+        // ignore audio registers
+        if(addr >= 0xFF10 && addr <= 0xFF3F) {
+            return true;
+        }
 
-    auto rom_data = std::ifstream{std::string{test.rom_path}, std::ios::binary};
-    // read directly into the start of the memory
-    rom_data.read(reinterpret_cast<char*>(mem.memory.data()), mem.memory.size());
+        // ignore serial transfer registers
+        if(addr == 0xFF01 || addr == 0xFF02) {
+            return true;
+        }
+        return false;
+    });
 
-    auto cpu = yahbog::cpu{&mem};
+    emu->hook_reading([](uint16_t addr) -> yahbog::emulator::reader_hook_response {
+        // pin LCDC.LY to 0x90 for Gameboy Doctor log consistency
+        if(addr == 0xFF44) {
+            return std::uint8_t{0x90};
+        }
+        return {};
+    });
 
     auto regs = yahbog::registers{};
     regs.a = 0x01; regs.f = 0xB0;
@@ -302,23 +324,34 @@ bool run_test(const test_info& test) {
     regs.d = 0x00; regs.e = 0xD8;
     regs.h = 0x01; regs.l = 0x4D;
     regs.sp = 0xFFFE; regs.pc = 0x0100;
-    cpu.load_registers(regs);
+
+    emu->z80.load_registers(regs);
+    emu->rom.load_rom(test.rom_path);
+
+    auto& cpu = emu->z80;
+    auto& mem = emu->mmu;
 
     std::size_t instruction_count = 0;
+    std::vector<std::string> logs{};
+    constexpr auto max_logs = 10;
+
+    auto is_skipped_instruction = [](std::uint16_t instruction) {
+        return instruction == 0xCB || instruction == 0xE3 || instruction == 0xE4 || instruction == 0xEB || instruction == 0xEC || instruction == 0xED || instruction == 0x76;
+    };
 
     while(!logs_done.stop_requested()) {
 
         std::uint16_t next_instruction = 0;
 
         do {
-            next_instruction = cpu.r().ir;
+            next_instruction = emu->z80.r().ir;
             do {
-                cpu.cycle();
+                emu->z80.cycle();
             } while (cpu.r().mupc != 0);
             instruction_count++;
-        } while(next_instruction == 0xCB);
+        } while(is_skipped_instruction(next_instruction) || cpu.r().halted);
 
-        auto my_log = cpu.gameboy_doctor_log();
+        auto my_log = gameboy_doctor_log(cpu.r(), [&mem](uint16_t addr) { return mem.read(addr); });
         auto expected = std::string{};
 
         while(true) {
@@ -332,10 +365,28 @@ bool run_test(const test_info& test) {
         }
 
         if(expected != my_log) {
+            constexpr static auto format_interrupts = [](std::uint8_t reg) {
+                return std::format("{}{}{}{}{}",
+                    (reg & 16) ? "J" : ".",
+                    (reg & 8) ? "S" : ".",
+                    (reg & 4) ? "T" : ".",
+                    (reg & 2) ? "L" : ".",
+                    (reg & 1) ? "V" : "."
+                );
+            };
             std::println("Test failed: {}", test.name);
-            std::println("Last instruction: {}",yahbog::opinfo[next_instruction].name);
+            std::println("Last instruction: {:02X} ({}) ({} executed)", next_instruction, yahbog::opinfo[next_instruction].name, instruction_count);
+            std::println("Interrupts: IME:{} IF:{} IE:{}", cpu.r().ime, format_interrupts(emu->mmu.read(0xFF0F)), format_interrupts(emu->mmu.read(0xFFFF)));
+            for(const auto& log : logs) {
+                std::println("   {}", log);
+            }
             print_colored_diff(expected, my_log);
             return false;
+        }
+
+        logs.push_back(std::move(my_log));
+        if(logs.size() > max_logs) {
+            logs.erase(logs.begin());
         }
     }
 

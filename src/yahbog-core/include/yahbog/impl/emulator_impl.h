@@ -1,3 +1,5 @@
+#pragma once
+
 #include <fstream>
 #include <cstring>
 #include <utility>
@@ -33,11 +35,10 @@ namespace yahbog {
         }
 
         rom_data = std::move(data);
-        std::memcpy(&header_, rom_data.data() + 0x0100, sizeof(rom_header_t));
+        header_ = rom_header_t::from_bytes({rom_data.data() + 0x0100, sizeof(rom_header_t)});
 
         rom_bank = 1;
-        ram_bank = 0;
-        ram_enabled = false;
+        ram_bank = std::numeric_limits<std::size_t>::max();
 
         auto ram_size = calc_ram_size(header_.ram_size);
         if(ram_size > 0) {
@@ -45,29 +46,5 @@ namespace yahbog {
         }
 
         return true;
-    }
-
-    uint8_t rom_t::read(uint16_t addr) {
-        if(addr < 0x4000) return rom_data[addr];
-        else if(addr < 0x8000) return rom_data[addr - 0x4000 + rom_bank * rom_bank_size];
-        else if(addr >= 0xA000 && addr < 0xC000) {
-            if(ram_enabled) {
-                auto offset = addr - 0xA000 + ram_bank * ram_bank_size;
-                if(offset >= ext_ram.size()) offset %= ext_ram.size();
-                return ext_ram[offset];
-            }
-            else return 0xFF;
-        }
-        else return 0xFF;
-    }
-
-    void rom_t::write(uint16_t addr, uint8_t value) {
-        if(addr >= 0xA000 && addr < 0xC000) {
-            if(ram_enabled) {
-                auto offset = addr - 0xA000 + ram_bank * ram_bank_size;
-                if(offset >= ext_ram.size()) offset %= ext_ram.size();
-                ext_ram[offset] = value;
-            }
-        }
     }
 }

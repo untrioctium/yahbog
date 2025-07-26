@@ -2,18 +2,18 @@
 
 using memory_map = std::unordered_map<std::uint16_t, std::uint8_t>;
 
-struct test_mmu : yahbog::addressable {
+struct test_mmu {
 
     memory_map memory;
 
 	test_mmu() {
 	}
 
-	uint8_t read(uint16_t addr) override {
+	uint8_t read(uint16_t addr) {
 		return memory[addr];
 	}
 
-	void write(uint16_t addr, uint8_t value) override {
+	void write(uint16_t addr, uint8_t value) {
 		memory[addr] = value;
 	}
 };
@@ -116,7 +116,10 @@ struct test_info {
             mem.memory[addr] = value;
         }
 
-		yahbog::cpu cpu(&mem);
+		auto reader = yahbog::read_fn_t{ [&mem](uint16_t addr) { return mem.read(addr); } };
+		auto writer = yahbog::write_fn_t{ [&mem](uint16_t addr, uint8_t value) { mem.write(addr, value); } };
+
+		yahbog::cpu cpu( &reader, &writer );
 		cpu.reset();
 		cpu.load_registers(initial_state.regs);
 		cpu.prefetch();

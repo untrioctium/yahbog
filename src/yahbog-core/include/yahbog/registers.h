@@ -39,13 +39,22 @@ namespace yahbog {
         constexpr void hl(std::uint16_t val) { h = val >> 8; l = val & 0xFF; }
         constexpr void wz(std::uint16_t val) { w = val >> 8; z = val & 0xFF; }
 
+        // holds the current instruction
         std::uint16_t ir = 0;
+
         std::uint16_t sp = 0;
         std::uint16_t pc = 0;
 
+        // internal interrupt flag 
         std::uint8_t ime = 0;
+
+        // signals a request to enable interrupts after the next instruction
         std::uint8_t ie = 0;
+
+        // micro program counter for instructions that take multiple cycles
         std::uint8_t mupc = 0;
+
+        std::uint8_t halted = 0;
 
         void reset() {
             a = 0x01;
@@ -69,10 +78,12 @@ namespace yahbog {
             { Underlying::write_mask } -> std::convertible_to<std::uint8_t>;
         }
     struct io_register {
-        Underlying value{};
+        Underlying v{};
 
-		constexpr std::uint8_t read() const { return std::bit_cast<std::uint8_t>(value) & Underlying::read_mask; }
-        constexpr void write(std::uint8_t val) { value = std::bit_cast<Underlying>(val & Underlying::write_mask); }
+		constexpr std::uint8_t read() const { return std::bit_cast<std::uint8_t>(v) & Underlying::read_mask; }
+        constexpr void write(std::uint8_t val) { v = std::bit_cast<Underlying>(static_cast<std::uint8_t>(val & Underlying::write_mask)); }
+
+        static_assert(std::has_unique_object_representations_v<Underlying>);
 
     };
 }

@@ -6,6 +6,7 @@ add_executable(
 
     suites/single_step.cpp
     suites/blargg_cpu_instrs.cpp
+    suites/blargg_general.cpp
 
     yahbog-tests.h
 )
