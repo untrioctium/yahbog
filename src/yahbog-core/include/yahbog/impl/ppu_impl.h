@@ -1,6 +1,7 @@
 #pragma once
 
 #include <yahbog/ppu.h>
+#include <utility>
 
 namespace yahbog {
 
@@ -17,6 +18,8 @@ namespace yahbog {
 			if (mode_clock >= 172) {
 				mode_clock = 0;
 				mode = mode_t::hblank;
+
+				render_scanline();
 			}
 			break;
 		case mode_t::hblank:
@@ -41,6 +44,7 @@ namespace yahbog {
 				}
 			}
 			break;
+		default: std::unreachable();
 		}
 
 	}

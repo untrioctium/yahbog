@@ -76,8 +76,8 @@ namespace yahbog {
 	template<std::size_t NumAddresses, addressable_concept... Handlers>
 	class memory_dispatcher {
 
-		using storage_t = std::array<void*, sizeof...(Handlers)>;
-		storage_t m_handlers{};
+		using storage_t = std::tuple<Handlers*...>;
+		storage_t m_handlers{(Handlers*)nullptr...};
 
 		struct jump_pair {
 			using read_fn_t = uint8_t (*)(storage_t&, uint16_t);
@@ -95,10 +95,10 @@ namespace yahbog {
 				constexpr static auto info = Handler::address_range()[Indices];
 				std::fill(table.begin() + info.start, table.begin() + info.end + 1, jump_pair{
 					[](storage_t& handlers, uint16_t addr) -> uint8_t {
-						return (static_cast<Handler*>(handlers[idx])->*(info.read_fn))(addr);
+						return (std::get<idx>(handlers)->*(info.read_fn))(addr);
 					},
 					[](storage_t& handlers, uint16_t addr, uint8_t data) -> void {
-						(static_cast<Handler*>(handlers[idx])->*(info.write_fn))(addr, data);
+						(std::get<idx>(handlers)->*(info.write_fn))(addr, data);
 					}
 				});
 			}(), ...);
@@ -117,11 +117,11 @@ namespace yahbog {
 
 				if constexpr (std::is_same_v<decltype(addr_range), const address_range_t<Handlers>>) {
 					std::fill(table.begin() + addr_range.start, table.begin() + addr_range.end + 1, jump_pair{
-						+[](storage_t& handlers, uint16_t addr) {
-							return (static_cast<Handlers*>(handlers[idx])->*(addr_range.read_fn))(addr);
+						[](storage_t& handlers, uint16_t addr) {
+							return (std::get<idx>(handlers)->*(addr_range.read_fn))(addr);
 						},
-						+[](storage_t& handlers, uint16_t addr, uint8_t data) {
-							(static_cast<Handlers*>(handlers[idx])->*(addr_range.write_fn))(addr, data);
+						[](storage_t& handlers, uint16_t addr, uint8_t data) {
+							(std::get<idx>(handlers)->*(addr_range.write_fn))(addr, data);
 						}
 					});
 				}
@@ -139,7 +139,7 @@ namespace yahbog {
 		constexpr static auto table_size_bytes = sizeof(jump_table);
 
 		constexpr bool all_valid() const {
-			return ((m_handlers[detail::index_of<Handlers, Handlers...>] != nullptr) && ...);
+			return ((std::get<detail::index_of<Handlers, Handlers...>>(m_handlers) != nullptr) && ...);
 		}
 
 		template<typename T>
@@ -147,7 +147,7 @@ namespace yahbog {
 			constexpr auto idx = detail::index_of<T, Handlers...>();
 			static_assert(idx < sizeof...(Handlers), "Handler not found");
 
-			m_handlers[idx] = handler;
+			std::get<idx>(m_handlers) = handler;
 		}
 
 		constexpr uint8_t read(uint16_t addr) {

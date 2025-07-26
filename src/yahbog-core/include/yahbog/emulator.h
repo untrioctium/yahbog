@@ -31,7 +31,8 @@ namespace yahbog {
 		constexpr emulator() : 
 			reader(default_reader()),
 			writer(default_writer()),
-			z80(&reader, &writer)
+			z80(&reader, &writer),
+			ppu(&reader, &writer)
 			{
 				mmu.set_handler(&wram);
 				mmu.set_handler(&hram);

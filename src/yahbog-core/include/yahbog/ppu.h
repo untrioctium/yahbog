@@ -2,17 +2,17 @@
 
 #include <yahbog/mmu.h>
 #include <yahbog/registers.h>
+#include <yahbog/operations.h>
 
 namespace yahbog {
 	class gpu {
 	public:
 
+		constexpr gpu(read_fn_t* read_fn, write_fn_t* write_fn) : read_fn(read_fn), write_fn(write_fn) {}
+
 		constexpr void tick(std::uint8_t cycles);
 		constexpr const auto& framebuffer() const { return m_framebuffer; }
 		constexpr bool framebuffer_ready() const { return mode == mode_t::vblank; }
-
-		constexpr uint8_t read(uint16_t addr);
-		constexpr void write(uint16_t addr, uint8_t value);
 
 		consteval static auto address_range() {
 			return std::array{
@@ -34,6 +34,9 @@ namespace yahbog {
 		};
 
 	private:
+
+		read_fn_t* read_fn = nullptr;
+		write_fn_t* write_fn = nullptr;
 
 		template<auto RegisterPtr>
 		constexpr uint8_t read_register([[maybe_unused]] uint16_t addr) {
