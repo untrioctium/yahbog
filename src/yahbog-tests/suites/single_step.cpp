@@ -198,18 +198,18 @@ void test_thread(std::span<const std::string> data, std::span<uint8_t> results) 
 
 bool run_single_step_tests() {
 
-	std::println("Loading tests from {}", TEST_DATA_DIR);
+	TestOutput::print_header("SM83 Single Step Tests");
 
 	if(!std::filesystem::exists(TEST_DATA_DIR "/sm83.zip")) {
-		std::println("sm83.zip not found, please run scripts/get_testing_deps.py");
+		std::cout << termcolor::red << "❌ sm83.zip not found, please run scripts/get_testing_deps.py" << termcolor::reset << "\n";
 		return false;
 	}
 
-	std::println("Opening archive: {}", TEST_DATA_DIR "/sm83.zip");
+	std::cout << termcolor::blue << "📁 Opening archive: " << TEST_DATA_DIR "/sm83.zip" << termcolor::reset << "\n";
 	std::unique_ptr<zip_t, decltype(&zip_close)> archive_ptr(zip_open(TEST_DATA_DIR "/sm83.zip", 0, 'r'), &zip_close);
 
 	if (!archive_ptr) {
-		std::println("Failed to open archive");
+		std::cout << termcolor::red << "❌ Failed to open archive" << termcolor::reset << "\n";
 		return false;
 	}
 
@@ -228,19 +228,24 @@ bool run_single_step_tests() {
 		zip_entry_close(archive);
 	}
 
-	std::println("Found {} tests", file_total);
+	std::cout << termcolor::blue << "🔍 Found " << file_total << " tests" << termcolor::reset << "\n";
 
 	std::vector<std::string> test_data{};
 	test_data.resize(file_total);
 	std::vector<std::uint8_t> test_results{};
 	test_results.resize(file_total);
+	std::vector<std::string> test_names{};
+	test_names.resize(file_total);
 
 	std::memset(test_results.data(), 0, test_results.size());
+
+	auto start_time = std::chrono::high_resolution_clock::now();
 
 	std::size_t fc = 0;
 	for (auto i: files) {
 		zip_entry_openbyindex(archive, i);
 
+		test_names[fc] = zip_entry_name(archive);
 		const auto size = zip_entry_size(archive);
 		std::string data(size, '\0');
 
@@ -248,18 +253,56 @@ bool run_single_step_tests() {
 		test_data[fc] = std::move(data);
 		fc++;
 
+		TestOutput::print_progress(fc, file_total, "Loading tests...");
 		zip_entry_close(archive);
 	}
 
-	std::println("Loaded {} tests", test_data.size());
+	std::cout << "\n" << termcolor::blue << "⚡ Running tests with " << std::thread::hardware_concurrency() << " threads..." << termcolor::reset << "\n";
 
 	const auto num_threads = std::thread::hardware_concurrency();
 	const auto per_thread = test_data.size() / num_threads;
 
 	std::vector<std::thread> threads{};
+	std::atomic<int> completed_tests{0};
 
 	std::span<const std::string> data_span{ test_data.data(), test_data.size() };
 	std::span<std::uint8_t> results_span{ test_results.data(), test_results.size() };
+
+	// Progress reporting thread
+	std::atomic<bool> progress_done{false};
+	std::thread progress_thread([&]() {
+		while (!progress_done.load()) {
+			TestOutput::print_progress(completed_tests.load(), file_total, "Running...");
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		}
+	});
+
+	// Enhanced test thread function with progress tracking
+	auto enhanced_test_thread = [&](std::span<const std::string> data, std::span<std::uint8_t> results) {
+		for (std::size_t i = 0; i < data.size(); i++) {
+			results[i] = 1;
+
+			try {
+				nlohmann::json j = nlohmann::json::parse(data[i]);
+
+				for (auto& test : j) {
+					test_info info = test_info::from_json(test);
+					auto result = info.run();
+
+					if(!result) {
+						results[i] = 0;
+						// Don't print individual failures during parallel execution
+						break;
+					}
+				}
+			}
+			catch (const std::exception& e) {
+				results[i] = 0;
+			}
+			
+			completed_tests.fetch_add(1);
+		}
+	};
 
 	for (auto i = 0; i < num_threads; i++) {
 		auto start = i * per_thread;
@@ -267,15 +310,66 @@ bool run_single_step_tests() {
 		if (i == num_threads - 1) {
 			end = test_data.size();
 		}
-		threads.emplace_back(test_thread, data_span.subspan(start, end - start), results_span.subspan(start, end - start));
+		threads.emplace_back(enhanced_test_thread, data_span.subspan(start, end - start), results_span.subspan(start, end - start));
 	}
 
 	for (auto& thread : threads) {
 		thread.join();
 	}
-	bool good = std::all_of(test_results.begin(), test_results.end(), [](auto result) { return result == 1; });
-	if (good) {
-		std::println("All tests passed");
+
+	progress_done = true;
+	progress_thread.join();
+	
+	// Ensure we show 100% completion
+	TestOutput::print_progress(file_total, file_total, "Complete!");
+	std::cout << "\n";
+
+	auto end_time = std::chrono::high_resolution_clock::now();
+	auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+	// Create result summary
+	std::vector<TestResult> results;
+	int passed = 0, failed = 0;
+
+	for (std::size_t i = 0; i < test_results.size(); i++) {
+		if (test_results[i] == 1) {
+			passed++;
+		} else {
+			failed++;
+			// Store failed test names for detailed reporting
+			results.push_back({test_names[i], false, std::chrono::milliseconds(0), ""});
+		}
 	}
-	return good;
+
+	std::cout << "\n\n";
+	TestOutput::print_header("Single Step Test Results");
+
+	if (failed > 0) {
+		std::cout << termcolor::red << "❌ Failed tests:" << termcolor::reset << "\n";
+		for (const auto& result : results) {
+			if (!result.passed) {
+				std::cout << "   • " << result.name << "\n";
+			}
+		}
+		std::cout << "\n";
+	}
+
+	std::cout << termcolor::cyan << termcolor::bold << "Summary:" << termcolor::reset << "\n";
+	std::cout << "  " << termcolor::green << "✅ Passed: " << passed << termcolor::reset << "\n";
+	if (failed > 0) {
+		std::cout << "  " << termcolor::red << "❌ Failed: " << failed << termcolor::reset << "\n";
+	}
+	std::cout << "  " << termcolor::yellow << "⏱️  Total time: " << total_duration.count() << "ms" << termcolor::reset << "\n";
+	std::cout << "  " << termcolor::blue << "🧵 Threads used: " << num_threads << termcolor::reset << "\n";
+	std::cout << "  " << termcolor::magenta << "📊 Tests per second: " << std::fixed << std::setprecision(1) 
+	          << (double)file_total / (total_duration.count() / 1000.0) << termcolor::reset << "\n";
+
+	bool all_passed = (failed == 0);
+	if (all_passed) {
+		std::cout << "\n" << termcolor::green << termcolor::bold << "🎉 All single step tests passed! 🎉" << termcolor::reset << "\n";
+	} else {
+		std::cout << "\n" << termcolor::red << termcolor::bold << "💥 Some single step tests failed!" << termcolor::reset << "\n";
+	}
+
+	return all_passed;
 }

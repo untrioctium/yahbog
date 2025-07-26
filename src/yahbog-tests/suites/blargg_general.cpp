@@ -13,7 +13,7 @@ namespace {
 
 	bool run_test(const std::filesystem::path& rom_path) {
 		auto filename = rom_path.filename().string();
-		std::println("Running test: {}", filename);
+		auto start_time = std::chrono::high_resolution_clock::now();
 
 		auto emu = std::make_unique<yahbog::emulator>();
 		std::string serial_data{};
@@ -68,23 +68,53 @@ namespace {
 		auto& cpu = emu->z80;
 		auto& mem = emu->mmu;
 
-		while(true) {
+		// Track cycles for performance info
+		std::size_t cycle_count = 0;
+		const std::size_t max_cycles = 100000000; // 100M cycles safety limit
+
+		while(cycle_count < max_cycles) {
 			cpu.cycle();
+			cycle_count++;
 
 			if(serial_data.ends_with("Passed")) {
+				auto end_time = std::chrono::high_resolution_clock::now();
+				auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+				auto real_time_ms = TestOutput::cycles_to_real_time_ms(cycle_count);
+				
+				std::cout << termcolor::green << "✅ " << std::left << std::setw(40) << filename;
+				std::cout << termcolor::yellow << std::right << std::setw(8) << duration.count() << "ms" << termcolor::reset;
+				std::cout << termcolor::dark << " (real: " << TestOutput::format_real_time(real_time_ms) << ", " << cycle_count << " cycles)" << termcolor::reset << "\n";
 				return true;
 			} else if(serial_data.ends_with("Failed")) {
-				std::println("Test failed: {}", filename);
+				auto end_time = std::chrono::high_resolution_clock::now();
+				auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+				auto real_time_ms = TestOutput::cycles_to_real_time_ms(cycle_count);
+				
+				std::cout << termcolor::red << "❌ " << std::left << std::setw(40) << filename;
+				std::cout << termcolor::yellow << std::right << std::setw(8) << duration.count() << "ms" << termcolor::reset;
+				std::cout << termcolor::red << " Test failed" << termcolor::reset << "\n";
+				std::cout << termcolor::dark << "  Real time: " << TestOutput::format_real_time(real_time_ms) << ", " << cycle_count << " cycles" << termcolor::reset << "\n";
+				std::cout << termcolor::dark << "  Serial output: " << serial_data << termcolor::reset << "\n";
 				return false;
 			}
 		}
 
-		return true;
+		// Test timed out
+		auto end_time = std::chrono::high_resolution_clock::now();
+		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+		auto real_time_ms = TestOutput::cycles_to_real_time_ms(cycle_count);
+		
+		std::cout << termcolor::red << "❌ " << std::left << std::setw(40) << filename;
+		std::cout << termcolor::yellow << std::right << std::setw(8) << duration.count() << "ms" << termcolor::reset;
+		std::cout << termcolor::red << " Timeout (>100M cycles)" << termcolor::reset << "\n";
+		std::cout << termcolor::dark << "  Real time: " << TestOutput::format_real_time(real_time_ms) << ", " << cycle_count << " cycles" << termcolor::reset << "\n";
+		return false;
 	}
+
 }
 
 bool run_blargg_general() {
-	std::println("Running blargg general tests");
+	TestOutput::print_header("Blargg General Tests");
 
 	std::vector<std::filesystem::path> roms{};
 
@@ -96,11 +126,68 @@ bool run_blargg_general() {
 
 	std::sort(roms.begin(), roms.end());
 
+	if (roms.empty()) {
+		std::cout << termcolor::red << "❌ No test ROMs found in " << BASE_DIR << termcolor::reset << "\n";
+		return false;
+	}
+
+	std::cout << termcolor::blue << "🔍 Found " << roms.size() << " general tests" << termcolor::reset << "\n";
+	std::cout << termcolor::blue << "📊 Running tests with serial output verification..." << termcolor::reset << "\n\n";
+
+	auto start_time = std::chrono::high_resolution_clock::now();
+	std::vector<TestResult> results;
+	int passed = 0, failed = 0;
+
 	for(const auto& rom : roms) {
-		if(!run_test(rom)) {
-			return false;
+		auto test_start = std::chrono::high_resolution_clock::now();
+		bool success = run_test(rom);
+		auto test_end = std::chrono::high_resolution_clock::now();
+		auto test_duration = std::chrono::duration_cast<std::chrono::milliseconds>(test_end - test_start);
+		
+		results.push_back({rom.filename().string(), success, test_duration, ""});
+		
+		if (success) {
+			passed++;
+		} else {
+			failed++;
 		}
 	}
 
-	return true;
+	auto end_time = std::chrono::high_resolution_clock::now();
+	auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+	std::cout << "\n";
+	TestOutput::print_header("Blargg General Test Results");
+
+	if (failed > 0) {
+		std::cout << termcolor::red << "❌ Failed tests:" << termcolor::reset << "\n";
+		for (const auto& result : results) {
+			if (!result.passed) {
+				std::cout << "   • " << result.name << " (" << result.duration.count() << "ms)\n";
+			}
+		}
+		std::cout << "\n";
+	}
+
+	std::cout << termcolor::cyan << termcolor::bold << "Summary:" << termcolor::reset << "\n";
+	std::cout << "  " << termcolor::green << "✅ Passed: " << passed << termcolor::reset << "\n";
+	if (failed > 0) {
+		std::cout << "  " << termcolor::red << "❌ Failed: " << failed << termcolor::reset << "\n";
+	}
+	std::cout << "  " << termcolor::yellow << "⏱️  Total time: " << total_duration.count() << "ms" << termcolor::reset << "\n";
+	
+	// Calculate average time per test
+	if (!results.empty()) {
+		auto avg_time = total_duration.count() / results.size();
+		std::cout << "  " << termcolor::magenta << "📊 Average per test: " << avg_time << "ms" << termcolor::reset << "\n";
+	}
+
+	bool all_passed = (failed == 0);
+	if (all_passed) {
+		std::cout << "\n" << termcolor::green << termcolor::bold << "🎉 All general tests passed! 🎉" << termcolor::reset << "\n";
+	} else {
+		std::cout << "\n" << termcolor::red << termcolor::bold << "💥 Some general tests failed!" << termcolor::reset << "\n";
+	}
+
+	return all_passed;
 }

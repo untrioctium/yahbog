@@ -9,6 +9,8 @@
 #include <iostream>
 #include <vector>
 #include <format>
+#include <sstream> // Required for std::ostringstream
+#include <iomanip> // Required for std::setw
 
 // outputs in the format:
 // A:00 F:11 B:22 C:33 D:44 E:55 H:66 L:77 SP:8888 PC:9999 PCMEM:AA,BB,CC,DD
@@ -117,9 +119,9 @@ void print_colored_diff(std::string_view expected, std::string_view actual) {
 	auto actual_sections = split_string(actual);
 	
 	// Print expected line
-	std::cout << "E: ";
 	size_t max_sections = (std::max)(expected_sections.size(), actual_sections.size());
 	
+	std::cout << "    ";
 	for (size_t i = 0; i < max_sections; ++i) {
 		if (i > 0) std::cout << " ";
 		
@@ -129,13 +131,13 @@ void print_colored_diff(std::string_view expected, std::string_view actual) {
 		if (exp_section != act_section) {
 			std::cout << termcolor::green << exp_section << termcolor::reset;
 		} else {
-			std::cout << exp_section;
+			std::cout << termcolor::dark << exp_section << termcolor::reset;
 		}
 	}
 	std::cout << "\n";
 	
 	// Print actual line
-	std::cout << "A: ";
+	std::cout << "    ";
 	for (size_t i = 0; i < max_sections; ++i) {
 		if (i > 0) std::cout << " ";
 		
@@ -145,7 +147,7 @@ void print_colored_diff(std::string_view expected, std::string_view actual) {
 		if (exp_section != act_section) {
 			std::cout << termcolor::red << act_section << termcolor::reset;
 		} else {
-			std::cout << act_section;
+			std::cout << termcolor::dark << act_section << termcolor::reset;
 		}
 	}
 	std::cout << "\n";
@@ -235,13 +237,14 @@ void decompress_thread(decompress_thread_state&& state) {
 
 static bool run_test(const std::filesystem::path& rom_path) {
 	auto filename = rom_path.filename().string();
-	std::println("Running test: {}", filename);
+	auto start_time = std::chrono::high_resolution_clock::now();
 
 	auto number_start = filename.find_first_not_of("0");
 	auto number_end = filename.find_first_of('-');
 
 	if(number_start == std::string::npos || number_end == std::string::npos) {
-		std::println("Invalid filename: {}", filename);
+		std::cout << termcolor::red << "❌ " << std::left << std::setw(40) << filename 
+		          << "Invalid filename format" << termcolor::reset << "\n";
 		return false;
 	}
 
@@ -250,7 +253,8 @@ static bool run_test(const std::filesystem::path& rom_path) {
 	auto log_path = rom_path.parent_path() / log_filename;
 
 	if (!std::filesystem::exists(log_path)) {
-		std::println("Log file not found: {}", log_path.string());
+		std::cout << termcolor::red << "❌ " << std::left << std::setw(40) << filename 
+		          << "Log file not found: " << log_filename << termcolor::reset << "\n";
 		return false;
 	}
 
@@ -305,6 +309,7 @@ static bool run_test(const std::filesystem::path& rom_path) {
 	auto& mem = emu->mmu;
 
 	std::size_t instruction_count = 0;
+	std::size_t cycle_count = 0;
 	std::vector<std::string> logs{};
 	constexpr auto max_logs = 10;
 
@@ -320,6 +325,7 @@ static bool run_test(const std::filesystem::path& rom_path) {
 			next_instruction = emu->z80.r().ir;
 			do {
 				emu->z80.cycle();
+				cycle_count++;
 			} while (cpu.r().mupc != 0);
 			instruction_count++;
 		} while(is_skipped_instruction(next_instruction) || cpu.r().halted);
@@ -338,6 +344,14 @@ static bool run_test(const std::filesystem::path& rom_path) {
 		}
 
 		if(expected != my_log) {
+			auto end_time = std::chrono::high_resolution_clock::now();
+			auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+			auto real_time_ms = TestOutput::cycles_to_real_time_ms(cycle_count);
+			
+			std::cout << termcolor::red << "❌ " << std::left << std::setw(40) << filename;
+			std::cout << termcolor::yellow << std::right << std::setw(8) << duration.count() << "ms" << termcolor::reset;
+			std::cout << termcolor::red << " Log mismatch" << termcolor::reset << "\n";
+			
 			constexpr auto format_interrupts = [](std::uint8_t reg) {
 				return std::format("{}{}{}{}{}",
 					(reg & 16) ? "J" : ".",
@@ -347,13 +361,30 @@ static bool run_test(const std::filesystem::path& rom_path) {
 					(reg & 1) ? "V" : "."
 				);
 			};
-			std::println("Test failed: {}", filename);
-			std::println("Last instruction: {:02X} ({}) ({} executed)", next_instruction, yahbog::opinfo[next_instruction].name, instruction_count);
-			std::println("Interrupts: IME:{} IF:{} IE:{}", cpu.r().ime, format_interrupts(emu->mmu.read(0xFF0F)), format_interrupts(emu->mmu.read(0xFFFF)));
-			for(const auto& log : logs) {
-				std::println("   {}", log);
+			
+			// Show detailed failure information
+			std::cout << termcolor::dark << "  Last instruction: " << std::format("{:02X}", next_instruction);
+			if (next_instruction < yahbog::opinfo.size()) {
+				std::cout << " (" << yahbog::opinfo[next_instruction].name << ")";
 			}
+			std::cout << " (" << instruction_count << " instructions, " << cycle_count << " cycles)" << termcolor::reset << "\n";
+			
+			std::cout << termcolor::dark << "  Interrupts: IME:" << cpu.r().ime 
+			          << " IF:" << format_interrupts(emu->mmu.read(0xFF0F))
+			          << " IE:" << format_interrupts(emu->mmu.read(0xFFFF)) << termcolor::reset << "\n";
+			
+			// Show the last few agreeing log lines for context
+			if (!logs.empty()) {
+				std::cout << termcolor::dark << "  Last agreeing logs:" << termcolor::reset << "\n";
+				for(const auto& log : logs) {
+					std::cout << termcolor::dark << "    " << log << termcolor::reset << "\n";
+				}
+			}
+			
+			// Show the colored diff of expected vs actual
+			std::cout << termcolor::dark << "  Expected vs Actual:" << termcolor::reset << "\n";
 			print_colored_diff(expected, my_log);
+			
 			return false;
 		}
 
@@ -363,12 +394,20 @@ static bool run_test(const std::filesystem::path& rom_path) {
 		}
 	}
 
+	auto end_time = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+	auto real_time_ms = TestOutput::cycles_to_real_time_ms(cycle_count);
+	
+	std::cout << termcolor::green << "✅ " << std::left << std::setw(40) << filename;
+	std::cout << termcolor::yellow << std::right << std::setw(8) << duration.count() << "ms" << termcolor::reset;
+	std::cout << termcolor::dark << " (real: " << TestOutput::format_real_time(real_time_ms) << ", " << cycle_count << " cycles)" << termcolor::reset << "\n";
+	
 	return true;
 }
 
 bool run_blargg_cpu_instrs() {
 
-	std::println("Running blargg CPU instruction tests with Gameboy Doctor logs");
+	TestOutput::print_header("Blargg CPU Instruction Tests");
 
 	std::vector<std::filesystem::path> roms{};
 
@@ -381,11 +420,68 @@ bool run_blargg_cpu_instrs() {
 
 	std::sort(roms.begin(), roms.end());
 
+	if (roms.empty()) {
+		std::cout << termcolor::red << "❌ No test ROMs found in " << BASE_DIR << termcolor::reset << "\n";
+		return false;
+	}
+
+	std::cout << termcolor::blue << "🔍 Found " << roms.size() << " CPU instruction tests" << termcolor::reset << "\n";
+	std::cout << termcolor::blue << "📊 Running tests with Gameboy Doctor log verification..." << termcolor::reset << "\n\n";
+
+	auto start_time = std::chrono::high_resolution_clock::now();
+	std::vector<TestResult> results;
+	int passed = 0, failed = 0;
+
 	for(const auto& rom : roms) {
-		if(!run_test(rom)) {
-			return false;
+		auto test_start = std::chrono::high_resolution_clock::now();
+		bool success = run_test(rom);
+		auto test_end = std::chrono::high_resolution_clock::now();
+		auto test_duration = std::chrono::duration_cast<std::chrono::milliseconds>(test_end - test_start);
+		
+		results.push_back({rom.filename().string(), success, test_duration, ""});
+		
+		if (success) {
+			passed++;
+		} else {
+			failed++;
 		}
 	}
 
-	return true;
+	auto end_time = std::chrono::high_resolution_clock::now();
+	auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+	std::cout << "\n";
+	TestOutput::print_header("Blargg CPU Instruction Results");
+
+	if (failed > 0) {
+		std::cout << termcolor::red << "❌ Failed tests:" << termcolor::reset << "\n";
+		for (const auto& result : results) {
+			if (!result.passed) {
+				std::cout << "   • " << result.name << " (" << result.duration.count() << "ms)\n";
+			}
+		}
+		std::cout << "\n";
+	}
+
+	std::cout << termcolor::cyan << termcolor::bold << "Summary:" << termcolor::reset << "\n";
+	std::cout << "  " << termcolor::green << "✅ Passed: " << passed << termcolor::reset << "\n";
+	if (failed > 0) {
+		std::cout << "  " << termcolor::red << "❌ Failed: " << failed << termcolor::reset << "\n";
+	}
+	std::cout << "  " << termcolor::yellow << "⏱️  Total time: " << total_duration.count() << "ms" << termcolor::reset << "\n";
+	
+	// Calculate average time per test
+	if (!results.empty()) {
+		auto avg_time = total_duration.count() / results.size();
+		std::cout << "  " << termcolor::magenta << "📊 Average per test: " << avg_time << "ms" << termcolor::reset << "\n";
+	}
+
+	bool all_passed = (failed == 0);
+	if (all_passed) {
+		std::cout << "\n" << termcolor::green << termcolor::bold << "🎉 All CPU instruction tests passed! 🎉" << termcolor::reset << "\n";
+	} else {
+		std::cout << "\n" << termcolor::red << termcolor::bold << "💥 Some CPU instruction tests failed!" << termcolor::reset << "\n";
+	}
+
+	return all_passed;
 }
