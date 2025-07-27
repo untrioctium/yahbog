@@ -11,80 +11,13 @@ namespace {
 
 	#define BASE_DIR TEST_DATA_DIR "/blargg/general"
 
-	bool run_test(const std::filesystem::path& rom_path) {
-		auto filename = rom_path.filename().string();
-		std::println("Running test: {}", filename);
 
-		auto emu = std::make_unique<yahbog::emulator>();
-		std::string serial_data{};
-		emu->hook_writing([&serial_data](uint16_t addr, uint8_t value) {
-			// ignore audio registers
-			if(addr >= 0xFF10 && addr <= 0xFF3F) {
-				return true;
-			}
 
-			// ignore serial transfer registers
-			if(addr == 0xFF02) {
-				return true;
-			}
-
-			// ignore joypad
-			if(addr == 0xFF00) {
-				return true;
-			}
-
-			// print serial transfer data
-			if(addr == 0xFF01) {
-				serial_data += static_cast<char>(value);
-				return true;
-			}
-
-			return false;
-		});
-
-		emu->hook_reading([](uint16_t addr) -> yahbog::emulator::reader_hook_response {
-			if(addr == 0xFF00) {
-				return std::uint8_t{0x00};
-			}
-
-			// ignore audio registers
-			if(addr >= 0xFF10 && addr <= 0xFF3F) {
-				return std::uint8_t{0x00};
-			}
-
-			return {};
-		});
-
-		auto regs = yahbog::registers{};
-		regs.a = 0x01; regs.f = 0xB0;
-		regs.b = 0x00; regs.c = 0x13;
-		regs.d = 0x00; regs.e = 0xD8;
-		regs.h = 0x01; regs.l = 0x4D;
-		regs.sp = 0xFFFE; regs.pc = 0x0100;
-
-		emu->z80.load_registers(regs);
-		emu->rom.load_rom(rom_path.string());
-
-		auto& cpu = emu->z80;
-		auto& mem = emu->mmu;
-
-		while(true) {
-			cpu.cycle();
-
-			if(serial_data.ends_with("Passed")) {
-				return true;
-			} else if(serial_data.ends_with("Failed")) {
-				std::println("Test failed: {}", filename);
-				return false;
-			}
-		}
-
-		return true;
-	}
 }
 
 bool run_blargg_general() {
-	std::println("Running blargg general tests");
+	TestSuite::test_suite_runner suite("Blargg General Tests");
+	suite.start();
 
 	std::vector<std::filesystem::path> roms{};
 
@@ -96,11 +29,35 @@ bool run_blargg_general() {
 
 	std::sort(roms.begin(), roms.end());
 
-	for(const auto& rom : roms) {
-		if(!run_test(rom)) {
-			return false;
-		}
+	if (roms.empty()) {
+		std::cout << termcolor::red << "❌ No test ROMs found in " << BASE_DIR << termcolor::reset << "\n";
+		return false;
 	}
 
-	return true;
+	suite.print_info("🔍 Found " + std::to_string(roms.size()) + " general tests");
+	suite.print_info("📊 Running tests with serial output verification...");
+	std::cout << "\n";
+
+	for(const auto& rom : roms) {
+		auto result = TestSuite::run_rom_with_serial_check(rom);
+		auto real_time_ms = test_output::cycles_to_real_time_ms(result.cycles_executed);
+		
+		// Print individual test result with timing info
+		suite.print_test_line(
+			rom.filename().string(), 
+			result.passed, 
+			result.execution_time,
+			"(real: " + test_output::format_real_time(real_time_ms) + ", " + std::to_string(result.cycles_executed) + " cycles)"
+		);
+		
+		// Show failure details if test failed
+		if (!result.passed) {
+			std::cout << termcolor::red << "   💬 " << result.failure_reason << termcolor::reset << "\n";
+		}
+		
+		suite.add_result(rom.filename().string(), result.passed, result.execution_time);
+	}
+
+	suite.finish();
+	return suite.passed();
 }

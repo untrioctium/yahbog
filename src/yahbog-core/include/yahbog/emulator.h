@@ -30,6 +30,8 @@ namespace yahbog {
 			wram[addr - Offset] = value;
 		}
 
+		constexpr wram_t() : wram{0} {}
+
 		std::array<uint8_t, 0x2000> wram;
 	};
 

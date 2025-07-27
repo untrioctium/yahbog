@@ -8,6 +8,7 @@ add_executable(
     suites/blargg_general.cpp
 
     yahbog-tests.h
+    yahbog-tests.cpp
 )
 
 # nlohmann/json
@@ -37,6 +38,6 @@ target_link_libraries(
     readerwriterqueue
 )
 
-if(UNIX)
-    target_compile_options(yahbog-tests PRIVATE -O3 -march=native)
-endif()
+#if(UNIX)
+#    target_compile_options(yahbog-tests PRIVATE -O3 -march=native)
+#endif()

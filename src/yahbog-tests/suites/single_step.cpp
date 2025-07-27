@@ -170,46 +170,45 @@ struct test_info {
 	}
 };
 
-void test_thread(std::span<const std::string> data, std::span<uint8_t> results) {
-	for (auto i = 0; i < data.size(); i++) {
+// sm83-main/v1/0b.json -> 0x0B
+// sm83-main/v1/cb 0b.json -> 0x10B (0x0B + 0x100)
+// invalid -> std::nullopt
+std::optional<std::uint16_t> get_opcode_from_test_name(std::string_view name) {
 
-		results[i] = 1;
-
-		try {
-			nlohmann::json j = nlohmann::json::parse(data[i]);
-		
-			for (auto& test : j) {
-				test_info info = test_info::from_json(test);
-				
-				auto result = info.run();
-
-				if(!result) {
-					results[i] = 0;
-					std::print("Test {} failed\n", info.name);
-				}
-			}
-		}
-		catch (const std::exception& e) {
-			results[i] = 0;
-			std::print("Test {} failed\n", i);
-		}
+	auto last_slash = name.find_last_of('/');
+	if(last_slash == std::string_view::npos) {
+		return std::nullopt;
 	}
+
+	auto opcode_str = name.substr(last_slash + 1);
+	auto add = 0;
+	if(opcode_str.starts_with("cb")) {
+		opcode_str = opcode_str.substr(2);
+		add = 0x100;
+	}
+
+	if(opcode_str.empty()) {
+		return std::nullopt;
+	}
+
+	auto opcode = std::stoul(std::string(opcode_str), nullptr, 16);
+	return opcode + add;
 }
 
 bool run_single_step_tests() {
-
-	std::println("Loading tests from {}", TEST_DATA_DIR);
+			TestSuite::test_suite_runner suite("SM83 Single Step Tests");
+	suite.start();
 
 	if(!std::filesystem::exists(TEST_DATA_DIR "/sm83.zip")) {
-		std::println("sm83.zip not found, please run scripts/get_testing_deps.py");
+		std::cout << termcolor::red << "❌ sm83.zip not found, please run scripts/get_testing_deps.py" << termcolor::reset << "\n";
 		return false;
 	}
 
-	std::println("Opening archive: {}", TEST_DATA_DIR "/sm83.zip");
+	suite.print_info("📁 Opening archive: " + std::string(TEST_DATA_DIR) + "/sm83.zip");
 	std::unique_ptr<zip_t, decltype(&zip_close)> archive_ptr(zip_open(TEST_DATA_DIR "/sm83.zip", 0, 'r'), &zip_close);
 
 	if (!archive_ptr) {
-		std::println("Failed to open archive");
+		std::cout << termcolor::red << "❌ Failed to open archive" << termcolor::reset << "\n";
 		return false;
 	}
 
@@ -228,18 +227,30 @@ bool run_single_step_tests() {
 		zip_entry_close(archive);
 	}
 
-	std::println("Found {} tests", file_total);
+	suite.print_info("🔍 Found " + std::to_string(file_total) + " tests");
 
 	std::vector<std::string> test_data{};
 	test_data.resize(file_total);
 	std::vector<std::uint8_t> test_results{};
 	test_results.resize(file_total);
+	std::vector<std::string> test_names{};
+	test_names.resize(file_total);
 
 	std::memset(test_results.data(), 0, test_results.size());
+
+	// Loading progress
+			TestSuite::progress_tracker load_progress(file_total);
+	load_progress.start("Loading tests...");
 
 	std::size_t fc = 0;
 	for (auto i: files) {
 		zip_entry_openbyindex(archive, i);
+
+		test_names[fc] = zip_entry_name(archive);
+		auto opcode = get_opcode_from_test_name(test_names[fc]);
+		if(opcode) {
+			test_names[fc] = std::format("{} ({})", test_names[fc], yahbog::opinfo[*opcode].name);
+		}
 
 		const auto size = zip_entry_size(archive);
 		std::string data(size, '\0');
@@ -248,18 +259,52 @@ bool run_single_step_tests() {
 		test_data[fc] = std::move(data);
 		fc++;
 
+		load_progress.update(fc);
 		zip_entry_close(archive);
 	}
 
-	std::println("Loaded {} tests", test_data.size());
+	load_progress.finish();
 
 	const auto num_threads = std::thread::hardware_concurrency();
-	const auto per_thread = test_data.size() / num_threads;
+	suite.print_info("⚡ Running tests with " + std::to_string(num_threads) + " threads...");
 
+	// Test execution progress
+			TestSuite::progress_tracker test_progress(file_total);
+	test_progress.start("Running...");
+
+	const auto per_thread = test_data.size() / num_threads;
 	std::vector<std::thread> threads{};
+	std::atomic<int> completed_tests{0};
 
 	std::span<const std::string> data_span{ test_data.data(), test_data.size() };
 	std::span<std::uint8_t> results_span{ test_results.data(), test_results.size() };
+
+	// Enhanced test thread function with progress tracking
+	auto enhanced_test_thread = [&](std::span<const std::string> data, std::span<std::uint8_t> results) {
+		for (std::size_t i = 0; i < data.size(); i++) {
+			results[i] = 1;
+
+			try {
+				nlohmann::json j = nlohmann::json::parse(data[i]);
+
+				for (auto& test : j) {
+					test_info info = test_info::from_json(test);
+					auto result = info.run();
+
+					if(!result) {
+						results[i] = 0;
+						break;
+					}
+				}
+			}
+			catch (const std::exception& e) {
+				results[i] = 0;
+			}
+			
+			int current = completed_tests.fetch_add(1) + 1;
+			test_progress.update(current);
+		}
+	};
 
 	for (auto i = 0; i < num_threads; i++) {
 		auto start = i * per_thread;
@@ -267,15 +312,32 @@ bool run_single_step_tests() {
 		if (i == num_threads - 1) {
 			end = test_data.size();
 		}
-		threads.emplace_back(test_thread, data_span.subspan(start, end - start), results_span.subspan(start, end - start));
+		threads.emplace_back(enhanced_test_thread, data_span.subspan(start, end - start), results_span.subspan(start, end - start));
 	}
 
 	for (auto& thread : threads) {
 		thread.join();
 	}
-	bool good = std::all_of(test_results.begin(), test_results.end(), [](auto result) { return result == 1; });
-	if (good) {
-		std::println("All tests passed");
+
+	test_progress.finish();
+
+	// Collect results
+	int passed = 0, failed = 0;
+	for (std::size_t i = 0; i < test_results.size(); i++) {
+		if (test_results[i] == 1) {
+			passed++;
+			suite.add_result(test_names[i], true, std::chrono::milliseconds(0));
+		} else {
+			failed++;
+			suite.add_result(test_names[i], false, std::chrono::milliseconds(0));
+		}
 	}
-	return good;
+
+	// Add extra statistics specific to single step tests
+	std::stringstream extra_stats;
+	extra_stats << "  " << termcolor::blue << "🧵 Threads used: " << num_threads << termcolor::reset << "\n";
+
+	suite.add_extra_stats(extra_stats.str());
+	suite.finish();
+	return suite.passed();
 }
