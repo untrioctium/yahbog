@@ -2,8 +2,8 @@
 
 int main(int argc, char** argv) {
 
-	TestOutput::print_header("YAHBOG Test Suite");
-	std::cout << termcolor::blue << "🎮 Game Boy emulator test suite" << termcolor::reset << "\n\n";
+	test_output::print_header("Yahbog Test Suite");
+	std::cout << termcolor::blue << "🎮 Game Boy emulator test suite" << termcolor::reset << "\n";
 
 	auto overall_start = std::chrono::high_resolution_clock::now();
 	
@@ -11,7 +11,7 @@ int main(int argc, char** argv) {
 	int total_test_suites = 3;
 	int passed_suites = 0;
 
-	std::cout << termcolor::cyan << "Running " << total_test_suites << " test suites..." << termcolor::reset << "\n\n";
+	std::cout << termcolor::cyan << "   Running " << total_test_suites << " test suites..." << termcolor::reset << "\n\n";
 
 	// Single step tests
 	if (run_single_step_tests()) {
@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
 
 	// Final summary
 	std::cout << "\n";
-	TestOutput::print_header("Final Results");
+	test_output::print_header("Final Results");
 
 	std::cout << termcolor::cyan << termcolor::bold << "Overall Summary:" << termcolor::reset << "\n";
 	std::cout << "  " << termcolor::green << "✅ Test suites passed: " << passed_suites << "/" << total_test_suites << termcolor::reset << "\n";
@@ -52,7 +52,6 @@ int main(int argc, char** argv) {
 
 	if (all_passed) {
 		std::cout << "\n" << termcolor::green << termcolor::bold << "🎉🎉🎉 ALL TESTS PASSED! 🎉🎉🎉" << termcolor::reset << "\n";
-		std::cout << termcolor::green << "The YAHBOG emulator is working correctly! 🎮✨" << termcolor::reset << "\n\n";
 	} else {
 		std::cout << "\n" << termcolor::red << termcolor::bold << "💥 SOME TESTS FAILED!" << termcolor::reset << "\n";
 		std::cout << termcolor::red << "Please check the failed tests above for details. 🔍" << termcolor::reset << "\n\n";

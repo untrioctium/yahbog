@@ -8,6 +8,7 @@ add_executable(
     suites/blargg_general.cpp
 
     yahbog-tests.h
+    yahbog-tests.cpp
 )
 
 # nlohmann/json

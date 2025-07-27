@@ -18,6 +18,7 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <atomic>
 
 #define TEST_DATA_DIR "testdata"
 
@@ -25,115 +26,79 @@
 constexpr int TITLE_BOX_WIDTH = 40;
 
 // Test result structure for better reporting
-struct TestResult {
-    std::string name;
-    bool passed;
-    std::chrono::milliseconds duration;
-    std::string details;
+struct test_result {
+	std::string name;
+	bool passed;
+	std::chrono::milliseconds duration;
+	std::string details;
 };
 
 // Game Boy CPU frequency: 1.048576 MHz
 constexpr double GB_CPU_FREQUENCY_HZ = 1048576.0;
 
 // Utility functions for enhanced output
-namespace TestOutput {
-    // Utility function to repeat Unicode strings
-    inline std::string repeat_unicode(const std::string& str, size_t count) {
-        std::string result;
-        result.reserve(str.length() * count);
-        for (size_t i = 0; i < count; ++i) {
-            result += str;
-        }
-        return result;
-    }
+namespace test_output {
+	// Function declarations (implementations in yahbog-tests.cpp)
+	std::string repeat_unicode(const std::string& str, size_t count);
+	double cycles_to_real_time_ms(std::size_t cycles);
+	std::string format_real_time(double real_time_ms);
+	void print_header(const std::string& title);
+	void print_test_result(const test_result& result);
+	void print_progress(int current, int total, const std::string& current_test = "");
+	void print_suite_summary(const std::string& suite_name, int passed, int failed, 
+						   std::chrono::milliseconds total_time, const std::string& extra_stats = "");
+	void print_summary(const std::vector<test_result>& results);
+}
 
-    inline double cycles_to_real_time_ms(std::size_t cycles) {
-        return (static_cast<double>(cycles) / GB_CPU_FREQUENCY_HZ) * 1000.0;
-    }
+// Common test suite functionality
+namespace TestSuite {
+	// Shared emulator execution result
+	struct emulator_result {
+		bool passed;
+		std::string failure_reason;
+		std::size_t cycles_executed;
+		std::chrono::milliseconds execution_time;
+	};
 
-    inline std::string format_real_time(double real_time_ms) {
-        if (real_time_ms < 1.0) {
-            return std::format("{:.2f}μs", real_time_ms * 1000.0);
-        } else if (real_time_ms < 1000.0) {
-            return std::format("{:.2f}ms", real_time_ms);
-        } else {
-            return std::format("{:.2f}s", real_time_ms / 1000.0);
-        }
-    }
+	// Shared emulator execution functions
+	emulator_result run_rom_with_serial_check(const std::filesystem::path& rom_path);
 
-    inline void print_header(const std::string& title) {
-        std::cout << termcolor::cyan << termcolor::bold;
-        
-        // Top border
-        std::cout << "\n┌" << repeat_unicode("─", TITLE_BOX_WIDTH) << "┐\n";
-        
-        // Middle with centered text
-        int title_len = static_cast<int>(title.length());
-        int padding_total = TITLE_BOX_WIDTH - title_len;
-        int left_padding = padding_total / 2;
-        int right_padding = padding_total - left_padding;
-        
-        std::cout << "│" << std::string(left_padding, ' ') << title << std::string(right_padding, ' ') << "│\n";
-        
-        // Bottom border
-        std::cout << "└" << repeat_unicode("─", TITLE_BOX_WIDTH) << "┘" << termcolor::reset << "\n";
-    }
+	// Helper class for managing test suite execution and reporting
+	class test_suite_runner {
+	private:
+		std::string suite_name;
+		std::chrono::high_resolution_clock::time_point start_time;
+		std::vector<test_result> results;
+		std::string custom_extra_stats;
+		bool all_passed = true;
 
-    inline void print_test_result(const TestResult& result) {
-        if (result.passed) {
-            std::cout << termcolor::green << "✅ " << termcolor::reset;
-        } else {
-            std::cout << termcolor::red << "❌ " << termcolor::reset;
-        }
-        std::cout << std::left << std::setw(40) << result.name;
-        std::cout << termcolor::yellow << std::right << std::setw(8) << result.duration.count() << "ms" << termcolor::reset;
-        if (!result.details.empty()) {
-            std::cout << " " << termcolor::dark << result.details << termcolor::reset;
-        }
-        std::cout << "\n";
-    }
+	public:
+		test_suite_runner(const std::string& name);
+		void start();
+		void finish();
+		void add_result(const std::string& name, bool passed, 
+					   std::chrono::milliseconds duration, const std::string& details = "");
+		void add_extra_stats(const std::string& stats);
+		bool passed() const;
+		void print_info(const std::string& message);
+		void print_test_line(const std::string& name, bool passed, 
+						   std::chrono::milliseconds duration, const std::string& details = "");
+	};
 
-    inline void print_progress(int current, int total, const std::string& current_test = "") {
-        float percentage = (float)current / total * 100;
-        int bar_width = 40;
-        int filled = (int)(percentage / 100 * bar_width);
-        
-        std::cout << "\r" << termcolor::cyan << "   Progress: [";
-        for (int i = 0; i < bar_width; i++) {
-            if (i < filled) std::cout << "█";
-            else std::cout << "░";
-        }
-        std::cout << "] " << std::fixed << std::setprecision(1) << percentage << "% ";
-        std::cout << "(" << current << "/" << total << ")" << termcolor::reset;
-        if (!current_test.empty()) {
-            std::cout << " " << termcolor::dark << current_test << termcolor::reset;
-        }
-        std::cout.flush();
-    }
+	// Helper class for progress tracking with threading
+	class progress_tracker {
+	private:
+		int total_count;
+		std::atomic<int> current_count;
+		std::atomic<bool> done;
+		std::thread progress_thread;
 
-    inline void print_summary(const std::vector<TestResult>& results) {
-        int passed = 0, failed = 0;
-        std::chrono::milliseconds total_time{0};
-        
-        for (const auto& result : results) {
-            if (result.passed) passed++;
-            else failed++;
-            total_time += result.duration;
-        }
-
-        std::cout << "\n" << termcolor::cyan << termcolor::bold << "Summary:" << termcolor::reset << "\n";
-        std::cout << "  " << termcolor::green << "✅ Passed: " << passed << termcolor::reset << "\n";
-        if (failed > 0) {
-            std::cout << "  " << termcolor::red << "❌ Failed: " << failed << termcolor::reset << "\n";
-        }
-        std::cout << "  " << termcolor::yellow << "⏱️  Total time: " << total_time.count() << "ms" << termcolor::reset << "\n";
-        
-        if (failed == 0) {
-            std::cout << "\n" << termcolor::green << termcolor::bold << "🎉 All tests passed! 🎉" << termcolor::reset << "\n";
-        } else {
-            std::cout << "\n" << termcolor::red << termcolor::bold << "💥 Some tests failed!" << termcolor::reset << "\n";
-        }
-    }
+	public:
+		progress_tracker(int total);
+		void start(const std::string& initial_message = "Running...");
+		void update(int count);
+		void finish();
+	};
 }
 
 bool run_single_step_tests();

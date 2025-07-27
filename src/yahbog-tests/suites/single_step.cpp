@@ -170,42 +170,41 @@ struct test_info {
 	}
 };
 
-void test_thread(std::span<const std::string> data, std::span<uint8_t> results) {
-	for (auto i = 0; i < data.size(); i++) {
+// sm83-main/v1/0b.json -> 0x0B
+// sm83-main/v1/cb 0b.json -> 0x10B (0x0B + 0x100)
+// invalid -> std::nullopt
+std::optional<std::uint16_t> get_opcode_from_test_name(std::string_view name) {
 
-		results[i] = 1;
-
-		try {
-			nlohmann::json j = nlohmann::json::parse(data[i]);
-		
-			for (auto& test : j) {
-				test_info info = test_info::from_json(test);
-				
-				auto result = info.run();
-
-				if(!result) {
-					results[i] = 0;
-					std::print("Test {} failed\n", info.name);
-				}
-			}
-		}
-		catch (const std::exception& e) {
-			results[i] = 0;
-			std::print("Test {} failed\n", i);
-		}
+	auto last_slash = name.find_last_of('/');
+	if(last_slash == std::string_view::npos) {
+		return std::nullopt;
 	}
+
+	auto opcode_str = name.substr(last_slash + 1);
+	auto add = 0;
+	if(opcode_str.starts_with("cb")) {
+		opcode_str = opcode_str.substr(2);
+		add = 0x100;
+	}
+
+	if(opcode_str.empty()) {
+		return std::nullopt;
+	}
+
+	auto opcode = std::stoul(std::string(opcode_str), nullptr, 16);
+	return opcode + add;
 }
 
 bool run_single_step_tests() {
-
-	TestOutput::print_header("SM83 Single Step Tests");
+			TestSuite::test_suite_runner suite("SM83 Single Step Tests");
+	suite.start();
 
 	if(!std::filesystem::exists(TEST_DATA_DIR "/sm83.zip")) {
 		std::cout << termcolor::red << "❌ sm83.zip not found, please run scripts/get_testing_deps.py" << termcolor::reset << "\n";
 		return false;
 	}
 
-	std::cout << termcolor::blue << "📁 Opening archive: " << TEST_DATA_DIR "/sm83.zip" << termcolor::reset << "\n";
+	suite.print_info("📁 Opening archive: " + std::string(TEST_DATA_DIR) + "/sm83.zip");
 	std::unique_ptr<zip_t, decltype(&zip_close)> archive_ptr(zip_open(TEST_DATA_DIR "/sm83.zip", 0, 'r'), &zip_close);
 
 	if (!archive_ptr) {
@@ -228,7 +227,7 @@ bool run_single_step_tests() {
 		zip_entry_close(archive);
 	}
 
-	std::cout << termcolor::blue << "🔍 Found " << file_total << " tests" << termcolor::reset << "\n";
+	suite.print_info("🔍 Found " + std::to_string(file_total) + " tests");
 
 	std::vector<std::string> test_data{};
 	test_data.resize(file_total);
@@ -239,13 +238,20 @@ bool run_single_step_tests() {
 
 	std::memset(test_results.data(), 0, test_results.size());
 
-	auto start_time = std::chrono::high_resolution_clock::now();
+	// Loading progress
+			TestSuite::progress_tracker load_progress(file_total);
+	load_progress.start("Loading tests...");
 
 	std::size_t fc = 0;
 	for (auto i: files) {
 		zip_entry_openbyindex(archive, i);
 
 		test_names[fc] = zip_entry_name(archive);
+		auto opcode = get_opcode_from_test_name(test_names[fc]);
+		if(opcode) {
+			test_names[fc] = std::format("{} ({})", test_names[fc], yahbog::opinfo[*opcode].name);
+		}
+
 		const auto size = zip_entry_size(archive);
 		std::string data(size, '\0');
 
@@ -253,29 +259,25 @@ bool run_single_step_tests() {
 		test_data[fc] = std::move(data);
 		fc++;
 
-		TestOutput::print_progress(fc, file_total, "Loading tests...");
+		load_progress.update(fc);
 		zip_entry_close(archive);
 	}
 
-	std::cout << "\n" << termcolor::blue << "⚡ Running tests with " << std::thread::hardware_concurrency() << " threads..." << termcolor::reset << "\n";
+	load_progress.finish();
 
 	const auto num_threads = std::thread::hardware_concurrency();
-	const auto per_thread = test_data.size() / num_threads;
+	suite.print_info("⚡ Running tests with " + std::to_string(num_threads) + " threads...");
 
+	// Test execution progress
+			TestSuite::progress_tracker test_progress(file_total);
+	test_progress.start("Running...");
+
+	const auto per_thread = test_data.size() / num_threads;
 	std::vector<std::thread> threads{};
 	std::atomic<int> completed_tests{0};
 
 	std::span<const std::string> data_span{ test_data.data(), test_data.size() };
 	std::span<std::uint8_t> results_span{ test_results.data(), test_results.size() };
-
-	// Progress reporting thread
-	std::atomic<bool> progress_done{false};
-	std::thread progress_thread([&]() {
-		while (!progress_done.load()) {
-			TestOutput::print_progress(completed_tests.load(), file_total, "Running...");
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-		}
-	});
 
 	// Enhanced test thread function with progress tracking
 	auto enhanced_test_thread = [&](std::span<const std::string> data, std::span<std::uint8_t> results) {
@@ -291,7 +293,6 @@ bool run_single_step_tests() {
 
 					if(!result) {
 						results[i] = 0;
-						// Don't print individual failures during parallel execution
 						break;
 					}
 				}
@@ -300,7 +301,8 @@ bool run_single_step_tests() {
 				results[i] = 0;
 			}
 			
-			completed_tests.fetch_add(1);
+			int current = completed_tests.fetch_add(1) + 1;
+			test_progress.update(current);
 		}
 	};
 
@@ -317,59 +319,25 @@ bool run_single_step_tests() {
 		thread.join();
 	}
 
-	progress_done = true;
-	progress_thread.join();
-	
-	// Ensure we show 100% completion
-	TestOutput::print_progress(file_total, file_total, "Complete!");
-	std::cout << "\n";
+	test_progress.finish();
 
-	auto end_time = std::chrono::high_resolution_clock::now();
-	auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-	// Create result summary
-	std::vector<TestResult> results;
+	// Collect results
 	int passed = 0, failed = 0;
-
 	for (std::size_t i = 0; i < test_results.size(); i++) {
 		if (test_results[i] == 1) {
 			passed++;
+			suite.add_result(test_names[i], true, std::chrono::milliseconds(0));
 		} else {
 			failed++;
-			// Store failed test names for detailed reporting
-			results.push_back({test_names[i], false, std::chrono::milliseconds(0), ""});
+			suite.add_result(test_names[i], false, std::chrono::milliseconds(0));
 		}
 	}
 
-	std::cout << "\n\n";
-	TestOutput::print_header("Single Step Test Results");
+	// Add extra statistics specific to single step tests
+	std::stringstream extra_stats;
+	extra_stats << "  " << termcolor::blue << "🧵 Threads used: " << num_threads << termcolor::reset << "\n";
 
-	if (failed > 0) {
-		std::cout << termcolor::red << "❌ Failed tests:" << termcolor::reset << "\n";
-		for (const auto& result : results) {
-			if (!result.passed) {
-				std::cout << "   • " << result.name << "\n";
-			}
-		}
-		std::cout << "\n";
-	}
-
-	std::cout << termcolor::cyan << termcolor::bold << "Summary:" << termcolor::reset << "\n";
-	std::cout << "  " << termcolor::green << "✅ Passed: " << passed << termcolor::reset << "\n";
-	if (failed > 0) {
-		std::cout << "  " << termcolor::red << "❌ Failed: " << failed << termcolor::reset << "\n";
-	}
-	std::cout << "  " << termcolor::yellow << "⏱️  Total time: " << total_duration.count() << "ms" << termcolor::reset << "\n";
-	std::cout << "  " << termcolor::blue << "🧵 Threads used: " << num_threads << termcolor::reset << "\n";
-	std::cout << "  " << termcolor::magenta << "📊 Tests per second: " << std::fixed << std::setprecision(1) 
-	          << (double)file_total / (total_duration.count() / 1000.0) << termcolor::reset << "\n";
-
-	bool all_passed = (failed == 0);
-	if (all_passed) {
-		std::cout << "\n" << termcolor::green << termcolor::bold << "🎉 All single step tests passed! 🎉" << termcolor::reset << "\n";
-	} else {
-		std::cout << "\n" << termcolor::red << termcolor::bold << "💥 Some single step tests failed!" << termcolor::reset << "\n";
-	}
-
-	return all_passed;
+	suite.add_extra_stats(extra_stats.str());
+	suite.finish();
+	return suite.passed();
 }
