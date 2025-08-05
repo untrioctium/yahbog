@@ -11,22 +11,6 @@
 
 namespace yahbog {
 
-	using read_fn_t = yahbog::constexpr_function<uint8_t(uint16_t)>;
-	using write_fn_t = yahbog::constexpr_function<void(uint16_t, uint8_t)>;
-
-	struct mem_fns_t {
-		read_fn_t* read_ = nullptr;
-		write_fn_t* write_ = nullptr;
-
-		constexpr auto read(std::uint16_t addr) const noexcept {
-			return (*read_)(addr);
-		}
-
-		constexpr void write(std::uint16_t addr, std::uint8_t value) const noexcept {
-			(*write_)(addr, value);
-		}
-	}; 
-
 	#define OPCODE_ARGS yahbog::registers& reg, [[maybe_unused]] yahbog::mem_fns_t* mem
 
 	constexpr bool half_carries_add(std::uint8_t a, std::uint8_t b) {
@@ -94,6 +78,8 @@ namespace yahbog {
 		r8_ptr r1;
 		r8_ptr r2;
 
+		consteval regpair_t(r8_ptr r1, r8_ptr r2) : r1(r1), r2(r2) {}
+
 		constexpr std::uint16_t operator()(yahbog::registers& reg) const {
 			return (reg.*r1 << 8) | reg.*r2;
 		}
@@ -102,7 +88,7 @@ namespace yahbog {
 			reg.*r2 = val & 0xFF;
 		}
 
-		constexpr bool operator==(const regpair_t& other) const {
+		consteval bool operator==(const regpair_t& other) const {
 			return r1 == other.r1 && r2 == other.r2;
 		}
 	};
@@ -113,6 +99,18 @@ namespace yahbog {
 	constexpr auto regpair_hl = regpair_t{ &yahbog::registers::h, &yahbog::registers::l };
 
 	namespace opcodes {
+
+		namespace common {
+			constexpr void prefetch(OPCODE_ARGS) noexcept {
+				reg.ir = mem->read(reg.pc);
+				reg.pc++;
+			}
+
+			constexpr void prefetch_and_reset(OPCODE_ARGS) noexcept {
+				prefetch(reg, mem);
+				reg.mupc = 0;
+			}
+		}
 
 		struct info {
 			opcode_fn fn;
@@ -128,8 +126,7 @@ namespace yahbog {
 			reg.FZ(reg.a == 0);
 			reg.FN(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void adc_n8(OPCODE_ARGS) noexcept {
@@ -151,9 +148,7 @@ namespace yahbog {
 				reg.FZ(reg.a == 0);
 				reg.FN(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			}
 			default: std::unreachable();
@@ -170,8 +165,7 @@ namespace yahbog {
 
 			reg.FN(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void add_n8(OPCODE_ARGS) noexcept {
@@ -189,9 +183,7 @@ namespace yahbog {
 				reg.FZ(reg.a == 0);
 				reg.FN(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -203,8 +195,7 @@ namespace yahbog {
 			reg.FZ(reg.a == 0);
 			reg.FN(0); reg.FH(1); reg.FC(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void and_n8(OPCODE_ARGS) noexcept {
@@ -220,9 +211,7 @@ namespace yahbog {
 				reg.FZ(reg.a == 0);
 				reg.FN(0); reg.FH(1); reg.FC(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -258,9 +247,7 @@ namespace yahbog {
 				reg.mupc = 5;
 				return;
 			case 5:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -272,15 +259,13 @@ namespace yahbog {
 			reg.FC(!reg.FC());
 			reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void cp_aa(OPCODE_ARGS) noexcept {
 			reg.FZ(1); reg.FN(1); reg.FH(0); reg.FC(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void cp_n8(OPCODE_ARGS) noexcept {
@@ -297,9 +282,7 @@ namespace yahbog {
 				reg.FC(carries_sub(reg.a, reg.z));
 				reg.FN(1);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -311,8 +294,7 @@ namespace yahbog {
 			reg.a = ~reg.a;
 			reg.FN(1); reg.FH(1);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void daa(OPCODE_ARGS) noexcept {
@@ -341,36 +323,31 @@ namespace yahbog {
 			reg.FZ(reg.a == 0);
 			reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void di(OPCODE_ARGS) noexcept {
 			reg.ime = 0;
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void ei(OPCODE_ARGS) noexcept {
 			reg.ie = 1;
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void halt(OPCODE_ARGS) noexcept {
 			reg.halted = 1;
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void illegal(OPCODE_ARGS) noexcept {
 			// no-op
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void jp_n16(OPCODE_ARGS) noexcept {
@@ -391,9 +368,7 @@ namespace yahbog {
 				reg.mupc = 3;
 				return;
 			case 3:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -424,16 +399,14 @@ namespace yahbog {
 		}
 
 		constexpr void nop(OPCODE_ARGS) noexcept {
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void or_aa(OPCODE_ARGS) noexcept {
 			reg.FZ(reg.a == 0);
 			reg.FN(0); reg.FH(0); reg.FC(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void or_n8(OPCODE_ARGS) noexcept {
@@ -449,9 +422,7 @@ namespace yahbog {
 				reg.FZ(reg.a == 0);
 				reg.FN(0); reg.FH(0); reg.FC(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -482,9 +453,7 @@ namespace yahbog {
 				reg.mupc = 3;
 				return;
 			case 3:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -511,9 +480,7 @@ namespace yahbog {
 				reg.mupc = 3;
 				return;
 			case 3:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -528,8 +495,7 @@ namespace yahbog {
 
 			reg.FZ(0); reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void rlca(OPCODE_ARGS) noexcept {
@@ -538,8 +504,7 @@ namespace yahbog {
 
 			reg.FZ(0); reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void rra(OPCODE_ARGS) noexcept {
@@ -549,8 +514,7 @@ namespace yahbog {
 
 			reg.FZ(0); reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void rrca(OPCODE_ARGS) noexcept {
@@ -559,8 +523,7 @@ namespace yahbog {
 
 			reg.FZ(0); reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void sbc_aa(OPCODE_ARGS) noexcept {
@@ -575,8 +538,7 @@ namespace yahbog {
 
 			reg.FZ(reg.a == 0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void sbc_n8(OPCODE_ARGS) noexcept {
@@ -600,9 +562,7 @@ namespace yahbog {
 
 				reg.FZ(reg.a == 0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			}
 			default: std::unreachable();
@@ -614,8 +574,7 @@ namespace yahbog {
 		constexpr void scf(OPCODE_ARGS) noexcept {
 			reg.FN(0); reg.FH(0); reg.FC(1);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void stop_n8(OPCODE_ARGS) noexcept {
@@ -626,8 +585,7 @@ namespace yahbog {
 			reg.a = 0;
 			reg.FZ(1); reg.FN(1); reg.FH(0); reg.FC(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void sub_n8(OPCODE_ARGS) noexcept {
@@ -647,9 +605,7 @@ namespace yahbog {
 				reg.FN(1);
 				reg.a -= op;
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			}
 			default: std::unreachable();
@@ -662,8 +618,7 @@ namespace yahbog {
 			reg.a = 0;
 			reg.FZ(1); reg.FN(0); reg.FH(0); reg.FC(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		constexpr void xor_n8(OPCODE_ARGS) noexcept {
@@ -679,9 +634,7 @@ namespace yahbog {
 				reg.FZ(reg.a == 0);
 				reg.FN(0); reg.FH(0); reg.FC(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -703,9 +656,7 @@ namespace yahbog {
 				reg.FZ(!(reg.z & bit));
 				reg.FN(0); reg.FH(1);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			}
 			default: std::unreachable();
@@ -731,9 +682,7 @@ namespace yahbog {
 				return;
 			}
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -758,9 +707,7 @@ namespace yahbog {
 				return;
 			}
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -776,8 +723,7 @@ namespace yahbog {
 			reg.FZ(!(val & bit));
 			reg.FN(0); reg.FH(1);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<int op1, r8_ptr op2>
@@ -788,8 +734,7 @@ namespace yahbog {
 			val &= ~bit;
 			reg.*op2 = val;
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<int op1, r8_ptr op2>
@@ -800,8 +745,7 @@ namespace yahbog {
 			val |= bit;
 			reg.*op2 = val;
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<int op1>
@@ -823,9 +767,7 @@ namespace yahbog {
 				reg.mupc = 3;
 				return;
 			case 3:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -854,9 +796,7 @@ namespace yahbog {
 				}
 				return;
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			case 3:
 				reg.sp -= 1;
@@ -904,9 +844,7 @@ namespace yahbog {
 				reg.mupc = 3;
 				return;
 			case 3:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -940,9 +878,7 @@ namespace yahbog {
 				reg.mupc = 0;
 				return;
 			case 3:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -977,9 +913,7 @@ namespace yahbog {
 				reg.mupc = 4;
 				return;
 			case 4:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1007,9 +941,7 @@ namespace yahbog {
 
 				reg.FN(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			}
 			default: std::unreachable();
@@ -1036,9 +968,7 @@ namespace yahbog {
 
 				reg.FN(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			}
 			default: std::unreachable();
@@ -1051,15 +981,11 @@ namespace yahbog {
 
 			switch (reg.mupc) {
 			case 0:
-				// no-op
+				reg.sp = reg.hl();
 				reg.mupc = 1;
 				return;
 			case 1:
-				reg.sp = reg.hl();
-
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1089,9 +1015,7 @@ namespace yahbog {
 
 				reg.FZ(0); reg.FN(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			}
 			default: std::unreachable();
@@ -1110,9 +1034,7 @@ namespace yahbog {
 				reg.mupc = 1;
 				return;
 			case 1:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1129,9 +1051,7 @@ namespace yahbog {
 				reg.mupc = 1;
 				return;
 			case 1:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1147,9 +1067,7 @@ namespace yahbog {
 				reg.mupc = 1;
 				return;
 			case 1:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1176,9 +1094,7 @@ namespace yahbog {
 				reg.FZ(reg.a == 0);
 				reg.FN(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			}
 			default: std::unreachable();
@@ -1205,9 +1121,7 @@ namespace yahbog {
 
 				reg.FN(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1243,9 +1157,7 @@ namespace yahbog {
 				return;
 			}
 			case 3:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1266,9 +1178,7 @@ namespace yahbog {
 				reg.FZ(reg.a == 0);
 				reg.FN(0); reg.FH(1); reg.FC(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1290,9 +1200,7 @@ namespace yahbog {
 				reg.FC(carries_sub(reg.a, reg.z));
 				reg.FN(1);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1309,9 +1217,7 @@ namespace yahbog {
 				reg.mupc = 1;
 				return;
 			case 1:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1327,9 +1233,7 @@ namespace yahbog {
 				reg.mupc = 1;
 				return;
 			case 1:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1354,9 +1258,7 @@ namespace yahbog {
 				reg.mupc = 2;
 				return;
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1373,9 +1275,7 @@ namespace yahbog {
 				reg.mupc = 1;
 				return;
 			case 1:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1391,9 +1291,7 @@ namespace yahbog {
 				reg.mupc = 1;
 				return;
 			case 1:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1419,9 +1317,7 @@ namespace yahbog {
 				reg.mupc = 2;
 				return;
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1458,9 +1354,7 @@ namespace yahbog {
 				reg.mupc = 4;
 				return;
 			case 4:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1482,9 +1376,7 @@ namespace yahbog {
 				reg.mupc = 2;
 				return;
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1507,9 +1399,7 @@ namespace yahbog {
 				return;
 			case 2:
 				op1(reg, reg.wz());
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1531,9 +1421,7 @@ namespace yahbog {
 				return;
 			case 2:
 				reg.sp = reg.wz();
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1555,9 +1443,7 @@ namespace yahbog {
 				reg.FZ(reg.a == 0);
 				reg.FN(0); reg.FH(0); reg.FC(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1586,9 +1472,7 @@ namespace yahbog {
 				return;
 			case 2:
 				op1(reg, reg.wz());
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1614,9 +1498,7 @@ namespace yahbog {
 				reg.mupc = 3;
 				return;
 			case 3:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1647,9 +1529,7 @@ namespace yahbog {
 				return;
 			}
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1679,9 +1559,7 @@ namespace yahbog {
 				return;
 			}
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1712,9 +1590,7 @@ namespace yahbog {
 				return;
 			}
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1741,9 +1617,7 @@ namespace yahbog {
 				return;
 			}
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1770,9 +1644,7 @@ namespace yahbog {
 
 				reg.FZ(reg.a == 0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			}
 
@@ -1802,9 +1674,7 @@ namespace yahbog {
 				return;
 			}
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1834,9 +1704,7 @@ namespace yahbog {
 				return;
 			}
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1866,9 +1734,7 @@ namespace yahbog {
 				return;
 			}
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1893,9 +1759,7 @@ namespace yahbog {
 
 				reg.a -= val;
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			}
 			default: std::unreachable();
@@ -1926,9 +1790,7 @@ namespace yahbog {
 				return;
 			}
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1949,9 +1811,7 @@ namespace yahbog {
 				reg.FZ(reg.a == 0);
 				reg.FN(0); reg.FH(0); reg.FC(0);
 
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1969,9 +1829,7 @@ namespace yahbog {
 				return;
 			case 1:
 				reg.*op1 = reg.z;
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -1989,9 +1847,7 @@ namespace yahbog {
 			case 1:
 				reg.*op1 = reg.z;
 				op2(reg, op2(reg) - 1);
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -2008,9 +1864,7 @@ namespace yahbog {
 				return;
 			case 1:
 				reg.a = reg.z;
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -2022,8 +1876,7 @@ namespace yahbog {
 		constexpr void ld_r8_r8(OPCODE_ARGS) noexcept {
 			reg.*op1 = reg.*op2;
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1, r8_ptr op2>
@@ -2035,9 +1888,7 @@ namespace yahbog {
 				reg.mupc = 1;
 				return;
 			case 1:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -2054,9 +1905,7 @@ namespace yahbog {
 				reg.mupc = 1;
 				return;
 			case 1:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -2077,8 +1926,7 @@ namespace yahbog {
 
 			reg.FN(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2090,8 +1938,7 @@ namespace yahbog {
 
 			reg.FN(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2101,8 +1948,7 @@ namespace yahbog {
 			reg.FZ(reg.a == 0);
 			reg.FN(0); reg.FH(1); reg.FC(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2115,8 +1961,7 @@ namespace yahbog {
 
 			reg.FN(1);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2127,8 +1972,7 @@ namespace yahbog {
 
 			reg.FN(1);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2138,15 +1982,7 @@ namespace yahbog {
 			reg.FZ(reg.*op1 == 0);
 			reg.FN(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
-		}
-
-		template<r8_ptr op1>
-		constexpr void jr_r8_n8(OPCODE_ARGS) noexcept {
-			reg.mupc = 255;
-			return;
-
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2168,9 +2004,7 @@ namespace yahbog {
 				reg.mupc = 3;
 				return;
 			case 3:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -2198,9 +2032,7 @@ namespace yahbog {
 				return;
 			case 3:
 				reg.*op1 = reg.z;
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -2219,9 +2051,7 @@ namespace yahbog {
 				return;
 			case 1:
 				reg.*op1 = reg.z;
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -2243,9 +2073,7 @@ namespace yahbog {
 				reg.mupc = 2;
 				return;
 			case 2:
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -2268,9 +2096,7 @@ namespace yahbog {
 				return;
 			case 2:
 				reg.*op1 = reg.z;
-				reg.ir = mem->read(reg.pc);
-				reg.pc++;
-				reg.mupc = 0;
+				common::prefetch_and_reset(reg, mem);
 				return;
 			default: std::unreachable();
 			}
@@ -2285,8 +2111,7 @@ namespace yahbog {
 			reg.FZ(reg.a == 0);
 			reg.FN(0); reg.FH(0); reg.FC(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2302,8 +2127,7 @@ namespace yahbog {
 			reg.FZ(val == 0);
 			reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2315,8 +2139,7 @@ namespace yahbog {
 
 			reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2329,8 +2152,7 @@ namespace yahbog {
 			reg.FZ(reg.*op1 == 0);
 			reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2342,8 +2164,7 @@ namespace yahbog {
 
 			reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2359,8 +2180,7 @@ namespace yahbog {
 
 			reg.FZ(reg.a == 0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2371,8 +2191,7 @@ namespace yahbog {
 
 			reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2383,8 +2202,7 @@ namespace yahbog {
 			reg.FZ(reg.*op1 == 0);
 			reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2395,8 +2213,7 @@ namespace yahbog {
 			reg.FZ(reg.*op1 == 0);
 			reg.FN(0); reg.FH(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2411,8 +2228,7 @@ namespace yahbog {
 
 			reg.FN(1);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2425,8 +2241,7 @@ namespace yahbog {
 
 			reg.FN(0); reg.FH(0); reg.FC(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		template<r8_ptr op1>
@@ -2436,8 +2251,7 @@ namespace yahbog {
 			reg.FZ(reg.a == 0);
 			reg.FN(0); reg.FH(0); reg.FC(0);
 
-			reg.ir = mem->read(reg.pc);
-			reg.pc++;
+			common::prefetch(reg, mem);
 		}
 
 		// pseudo instruction for handling interrupts

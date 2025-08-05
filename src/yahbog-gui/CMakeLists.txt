@@ -1,20 +1,5 @@
 add_executable(yahbog-gui main.cpp)
 
-set(ZLIB_ENABLE_TESTS OFF)
-set(ZLIB_COMPAT ON)
-# zlib
-FetchContent_Declare(
-  zlib
-  GIT_REPOSITORY https://github.com/zlib-ng/zlib-ng
-  GIT_TAG 2.2.4
-  OVERRIDE_FIND_PACKAGE
-  EXCLUDE_FROM_ALL
-  GIT_SHALLOW TRUE
-)
-FetchContent_MakeAvailable(zlib)
-add_library(ZLIB::ZLIB ALIAS zlib)
-set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" "${zlib_BINARY_DIR}")
-
 # freetype
 FetchContent_Declare(
   freetype

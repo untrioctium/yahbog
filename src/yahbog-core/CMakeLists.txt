@@ -1,27 +1,28 @@
-# mimalloc
-set(MI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
-set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(mimalloc URL https://github.com/microsoft/mimalloc/archive/refs/tags/v3.0.8.zip)
-FetchContent_MakeAvailable(mimalloc)
+FetchContent_Declare(nameof URL https://github.com/Neargye/nameof/archive/refs/heads/master.zip)
+FetchContent_MakeAvailable(nameof)
 
 add_library(
     yahbog-core STATIC
     
     include/yahbog/cpu.h
     include/yahbog/emulator.h
+    include/yahbog/io.h
     include/yahbog/mmu.h
     include/yahbog/operations.h
     include/yahbog/opinfo.h
     include/yahbog/ppu.h
     include/yahbog/registers.h
     include/yahbog/rom.h
+    include/yahbog/timer.h
 
     include/yahbog/impl/emulator_impl.h
     include/yahbog/impl/ppu_impl.h
     include/yahbog/impl/rom_impl.h
 
     include/yahbog/utility/constexpr_function.h
+    include/yahbog/utility/serialization.h
+    include/yahbog/utility/sha1.h
+    include/yahbog/utility/traits.h
 
     include/yahbog.h
     
@@ -29,10 +30,12 @@ add_library(
     rom.cpp
 )
 
-target_link_libraries(yahbog-core PRIVATE mimalloc-static)
+target_link_libraries(yahbog-core PUBLIC nameof::nameof zlib)
+
+target_precompile_headers(yahbog-core PUBLIC include/yahbog.h)
 
 if(WIN32)
-    target_compile_definitions(yahbog-core PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_definitions(yahbog-core PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX)
 endif()
 
 target_include_directories(

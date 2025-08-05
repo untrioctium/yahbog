@@ -16,7 +16,7 @@ namespace {
 }
 
 bool run_blargg_general() {
-	TestSuite::test_suite_runner suite("Blargg General Tests");
+	test_suite::test_suite_runner suite("Blargg General Tests");
 	suite.start();
 
 	std::vector<std::filesystem::path> roms{};
@@ -39,7 +39,7 @@ bool run_blargg_general() {
 	std::cout << "\n";
 
 	for(const auto& rom : roms) {
-		auto result = TestSuite::run_rom_with_serial_check(rom);
+		auto result = test_suite::run_rom_with_serial_check(rom, yahbog::hardware_mode::dmg);
 		auto real_time_ms = test_output::cycles_to_real_time_ms(result.cycles_executed);
 		
 		// Print individual test result with timing info

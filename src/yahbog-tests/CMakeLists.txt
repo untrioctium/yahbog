@@ -6,6 +6,8 @@ add_executable(
     suites/single_step.cpp
     suites/blargg_cpu_instrs.cpp
     suites/blargg_general.cpp
+    suites/mooneye.cpp
+    suites/gbmicrotest.cpp
 
     yahbog-tests.h
     yahbog-tests.cpp
@@ -27,7 +29,7 @@ set_target_properties(yahbog-tests PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY ${CM
 
 target_include_directories(yahbog-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-target_precompile_headers(yahbog-tests PRIVATE yahbog-tests.h)
+target_precompile_headers(yahbog-tests REUSE_FROM yahbog-core)
 
 target_link_libraries(
     yahbog-tests PRIVATE

@@ -24,3 +24,7 @@ python3 scripts/get_testing_deps.py
 ```
 
 This will run a suite of processor tests, including invidiual instruction sets and various ROMs like Blargg's tests.
+
+## Architecture
+
+Since the Game Boy mostly operates on memory mapping, communication between systems in Yahbog is also done with memory reads and writes. Any system that wishes to be addressable (ROM handler, PPU, etc.) defines its memory ranges and the read/write member functions that correspond to those ranges. The `memory_dispatcher` class' template arguments then take a total memory size and any number of classes in its arguments; it then generates a jump table at compile time that efficiently dispatches requests to the defined ranges. Finally, the `emulator` class ties everything together by holding instances of the various system classes and a `memory_dispatcher` which is provided the addresses of each member. Classes that need to read or write memory they don't own (e.g. `IF` register) are provided with lambdas that route requests through the dispatcher. 

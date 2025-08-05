@@ -8,7 +8,7 @@ int main(int argc, char** argv) {
 	auto overall_start = std::chrono::high_resolution_clock::now();
 	
 	auto all_passed = true;
-	int total_test_suites = 3;
+	int total_test_suites = 5;
 	int passed_suites = 0;
 
 	std::cout << termcolor::cyan << "   Running " << total_test_suites << " test suites..." << termcolor::reset << "\n\n";
@@ -35,6 +35,23 @@ int main(int argc, char** argv) {
 	} else {
 		all_passed = false;
 	}
+	std::cout << "\n";
+
+	// Mooneye tests
+	if (run_mooneye()) {
+		passed_suites++;
+	} else {
+		all_passed = false;
+	}
+	std::cout << "\n";
+
+	// GB Microtest tests
+	if (run_gbmicrotest()) {
+		passed_suites++;
+	} else {
+		all_passed = false;
+	}
+	std::cout << "\n";
 
 	auto overall_end = std::chrono::high_resolution_clock::now();
 	auto overall_duration = std::chrono::duration_cast<std::chrono::milliseconds>(overall_end - overall_start);

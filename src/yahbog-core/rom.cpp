@@ -1,6 +1,6 @@
 #include <fstream>
 
-#include <yahbog/rom.h>
+#include <yahbog.h>
 
 namespace yahbog {
 	bool rom_t::load_rom(const std::filesystem::path& path) {

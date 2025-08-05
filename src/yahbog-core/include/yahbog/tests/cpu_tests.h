@@ -9,10 +9,11 @@ consteval bool basic_test() {
 	rom[0x100] = 0x06;
 	rom[0x101] = 0x42;
 
-	auto reader = yahbog::read_fn_t{ [&rom](uint16_t addr) { return rom[addr]; } };
-	auto writer = yahbog::write_fn_t{ [&rom](uint16_t addr, uint8_t value) { rom[addr] = value; } };
+	auto mem_fns = yahbog::mem_fns_t{};
+	mem_fns.read = [&rom](uint16_t addr) { return rom[addr]; };
+	mem_fns.write = [&rom](uint16_t addr, uint8_t value) { rom[addr] = value; };
 
-	auto z80 = yahbog::cpu{ &reader, &writer };
+	auto z80 = yahbog::cpu{ &mem_fns };
 
 	z80.reset();
 	z80.prefetch();

@@ -41,6 +41,8 @@ def blargg_general(rom_name: str, git_path: str, sha256: str):
 dependencies = [
 
     Dependency("https://github.com/SingleStepTests/sm83/archive/refs/heads/main.zip", f"{TEST_DATA_DIR}/sm83.zip", "87780d9d2eba95ac7836ef3d5b7d48a390a9d75eea0d3972ee6f9c3bf431463b"),
+    Dependency("https://gekkio.fi/files/mooneye-test-suite/mts-20240926-1737-443f6e1/mts-20240926-1737-443f6e1.zip", f"{TEST_DATA_DIR}/mooneye.zip", "5cf50314cd3d42ec8f423b0a71b9ab6dbfad2386d8d88f03687af1b5b5baba71"),
+    Dependency("https://github.com/aappleby/gbmicrotest/archive/refs/heads/main.zip", f"{TEST_DATA_DIR}/gbmicrotest.zip", "8edb0bc7defa02219fba83dc1bba8d278c2b1d4bf4895dddd0a2519fd627d427"),
 
     blargg_cpu("01-special.gb", "fe61349cbaee10cc384b50f356e541c90d1bc380185716706b5d8c465a03cf89"),
     blargg_cpu("02-interrupts.gb", "fb90b0d2b9501910c49709abda1d8e70f757dc12020ebf8409a7779bbfd12229"),

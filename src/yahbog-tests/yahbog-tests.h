@@ -51,7 +51,7 @@ namespace test_output {
 }
 
 // Common test suite functionality
-namespace TestSuite {
+namespace test_suite {
 	// Shared emulator execution result
 	struct emulator_result {
 		bool passed;
@@ -61,8 +61,9 @@ namespace TestSuite {
 	};
 
 	// Shared emulator execution functions
-	emulator_result run_rom_with_serial_check(const std::filesystem::path& rom_path);
-
+	std::unique_ptr<yahbog::emulator> create_emulator(yahbog::hardware_mode mode);
+	emulator_result run_rom_with_serial_check(const std::filesystem::path& rom_path, yahbog::hardware_mode mode);
+	
 	// Helper class for managing test suite execution and reporting
 	class test_suite_runner {
 	private:
@@ -104,3 +105,5 @@ namespace TestSuite {
 bool run_single_step_tests();
 bool run_blargg_cpu_instrs();
 bool run_blargg_general();
+bool run_mooneye();
+bool run_gbmicrotest();

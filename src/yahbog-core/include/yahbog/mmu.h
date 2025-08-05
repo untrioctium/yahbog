@@ -4,60 +4,138 @@
 #include <memory>
 #include <array>
 #include <span>
+#include <variant>
 
 #include <format>
 #include <stdexcept>
 
+#include <yahbog/registers.h>
+#include <yahbog/utility/constexpr_function.h>
+#include <yahbog/utility/traits.h>
+
 namespace yahbog {
+	
+	enum class hardware_mode {
+		dmg,
+		cgb
+	};
+
+	using read_fn_t = yahbog::constexpr_function<uint8_t(uint16_t)>;
+	using write_fn_t = yahbog::constexpr_function<void(uint16_t, uint8_t)>;
+
+	struct mem_fns_t {
+		read_fn_t read;
+		write_fn_t write;
+	}; 
 
 	template<typename T>
 	struct address_range_t {
 		uint16_t start;
 		uint16_t end;
 
-		using read_fn_t = uint8_t (T::*)(uint16_t);
-		using write_fn_t = void (T::*)(uint16_t, uint8_t);
+		using read_fn_member_t = uint8_t (T::*)(uint16_t);
+		using write_fn_member_t = void (T::*)(uint16_t, uint8_t);
+
+		using read_fn_ext_t = uint8_t (*)(T*, uint16_t);
+		using write_fn_ext_t = void (*)(T*, uint16_t, uint8_t);
+
+		using read_fn_t = std::variant<read_fn_member_t, read_fn_ext_t>;
+		using write_fn_t = std::variant<write_fn_member_t, write_fn_ext_t>;
 
 		read_fn_t read_fn;
 		write_fn_t write_fn;
 
 		consteval address_range_t(uint16_t start, uint16_t end, read_fn_t read_fn, write_fn_t write_fn) : start(start), end(end), read_fn(read_fn), write_fn(write_fn) {}
+		consteval address_range_t(uint16_t addr, read_fn_t read_fn, write_fn_t write_fn) : address_range_t(addr, addr, read_fn, write_fn) {}
 	};
 
-	template<typename T>
-	struct memory_helpers {
-		template<auto MemberPtr>
-		constexpr uint8_t read_member_byte([[maybe_unused]] uint16_t addr) {
-			return static_cast<T*>(this)->*MemberPtr;
+	#define ASSUME_IN_RANGE(value, start, end) [[assume(value >= (start))]]; [[assume(value <= (end))]]
+
+	enum class interrupt : std::uint8_t {
+		vblank = 0x00,
+		stat = 0x01,
+		timer = 0x02,
+		serial = 0x03,
+		joypad = 0x04,
+	};
+
+	constexpr void request_interrupt(interrupt i, mem_fns_t* mem) noexcept {
+		mem->write(0xFF0F, mem->read(0xFF0F) | (1 << static_cast<std::uint8_t>(i)));
+	}
+
+	constexpr void clear_interrupt(interrupt i, mem_fns_t* mem) noexcept {
+		mem->write(0xFF0F, mem->read(0xFF0F) & ~(1 << static_cast<std::uint8_t>(i)));
+	}
+
+	namespace mem_helpers {
+		namespace detail {
+
+			template<typename T>
+			struct is_io_register_helper {
+				static constexpr bool value = false;
+			};
+
+			template<typename T>
+			struct is_io_register_helper<io_register<T>> {
+				static constexpr bool value = true;
+			};
+			
+			template<typename T>
+			concept is_io_register = is_io_register_helper<T>::value;
+
 		}
 
 		template<auto MemberPtr>
-		constexpr void write_member_byte([[maybe_unused]] uint16_t addr, uint8_t value) {
-			static_cast<T*>(this)->*MemberPtr = value;
+		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && std::is_same_v<::yahbog::detail::traits::member_type_of<MemberPtr>, uint8_t>
+		constexpr uint8_t read_byte(::yahbog::detail::traits::class_type_of<MemberPtr>* obj, [[maybe_unused]] uint16_t addr) {
+			return obj->*MemberPtr;
 		}
-	};
+
+		template<auto MemberPtr>
+		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && std::is_same_v<::yahbog::detail::traits::member_type_of<MemberPtr>, uint8_t>
+		constexpr void write_byte(::yahbog::detail::traits::class_type_of<MemberPtr>* obj, [[maybe_unused]] uint16_t addr, uint8_t data) {
+			obj->*MemberPtr = data;
+		}
+
+		template<auto MemberPtr>
+		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && detail::is_io_register<::yahbog::detail::traits::member_type_of<MemberPtr>>
+		constexpr std::uint8_t read_io_register(::yahbog::detail::traits::class_type_of<MemberPtr>* obj, [[maybe_unused]] uint16_t addr) {
+			return (obj->*MemberPtr).read();
+		}
+
+		template<auto MemberPtr>
+		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && detail::is_io_register<::yahbog::detail::traits::member_type_of<MemberPtr>>
+		constexpr void write_io_register(::yahbog::detail::traits::class_type_of<MemberPtr>* obj, [[maybe_unused]] uint16_t addr, uint8_t data) {
+			(obj->*MemberPtr).write(data);
+		}
+
+		template<std::size_t Location, auto MemberPtr>
+		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && std::is_same_v<::yahbog::detail::traits::member_type_of<MemberPtr>, uint8_t>
+		consteval auto make_member_accessor() -> address_range_t<::yahbog::detail::traits::class_type_of<MemberPtr>> {
+			return {
+				Location,
+				Location,
+				&mem_helpers::read_byte<MemberPtr>,
+				&mem_helpers::write_byte<MemberPtr>
+			};
+		}
+
+		template<std::size_t Location, auto MemberPtr>
+		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && detail::is_io_register<::yahbog::detail::traits::member_type_of<MemberPtr>>
+		consteval auto make_member_accessor() -> address_range_t<::yahbog::detail::traits::class_type_of<MemberPtr>> {
+			return {
+				Location,
+				Location,
+				&mem_helpers::read_io_register<MemberPtr>,
+				&mem_helpers::write_io_register<MemberPtr>
+			};
+		}
+	}
 
 	template<typename T>
 	concept addressable_concept = requires(T) {
 		T::address_range().begin(); T::address_range().end();
 		{ *T::address_range().begin() } -> std::convertible_to<address_range_t<T>>;
-	};
-
-	template<std::size_t AddressStart, std::size_t AddressEnd>
-	struct simple_memory {
-		consteval static auto address_range() {
-			return std::array{ address_range_t<simple_memory>{ AddressStart, AddressEnd, &simple_memory::read, &simple_memory::write } };
-		}
-
-		std::array<uint8_t, AddressEnd - AddressStart + 1> memory{};
-
-		constexpr uint8_t read(uint16_t addr) {
-			return memory[addr - AddressStart];
-		}
-
-		constexpr void write(uint16_t addr, uint8_t data) {
-			memory[addr - AddressStart] = data;
-		}
 	};
 
 	namespace detail {
@@ -67,8 +145,6 @@ namespace yahbog {
 			((!found ? (++count, found = std::is_same_v<T, Ts>) : 0), ...);
 			return found ? count - 1 : count;
 		}
-
-		
 	}
 
 	template<std::size_t NumAddresses, addressable_concept... Handlers>
@@ -87,15 +163,29 @@ namespace yahbog {
 
 		template<typename Handler, std::size_t Index>
 		consteval static auto make_jump_pair_for_range() {
-			constexpr auto idx = detail::index_of<Handler, Handlers...>();
+			constexpr auto handler_idx = detail::index_of<Handler, Handlers...>();
+
+			using addr_range_t = address_range_t<Handler>;
+
 			return jump_pair{
 				[](storage_t& handlers, uint16_t addr) constexpr -> uint8_t {
+
 					constexpr auto range_info = Handler::address_range()[Index];
-					return (std::get<idx>(handlers)->*(range_info.read_fn))(addr);
+					if constexpr (std::holds_alternative<typename addr_range_t::read_fn_member_t>(range_info.read_fn)) {
+						return (std::get<handler_idx>(handlers)->*(std::get<typename addr_range_t::read_fn_member_t>(range_info.read_fn)))(addr);
+					}
+					else {
+						return std::get<typename addr_range_t::read_fn_ext_t>(range_info.read_fn)(std::get<handler_idx>(handlers), addr);
+					}
 				},
 				[](storage_t& handlers, uint16_t addr, uint8_t data) constexpr -> void {
 					constexpr auto range_info = Handler::address_range()[Index];
-					(std::get<idx>(handlers)->*(range_info.write_fn))(addr, data);
+					if constexpr (std::holds_alternative<typename addr_range_t::write_fn_member_t>(range_info.write_fn)) {
+						(std::get<handler_idx>(handlers)->*(std::get<typename addr_range_t::write_fn_member_t>(range_info.write_fn)))(addr, data);
+					}
+					else {
+						std::get<typename addr_range_t::write_fn_ext_t>(range_info.write_fn)(std::get<handler_idx>(handlers), addr, data);
+					}
 				}
 			};
 		}
@@ -112,12 +202,15 @@ namespace yahbog {
 		constexpr static std::array<jump_pair, NumAddresses> jump_table = []() consteval {
 			std::array<jump_pair, NumAddresses> table{};
 
-			table.fill({nullptr, nullptr});
+			table.fill({
+				[](storage_t&, uint16_t) constexpr -> uint8_t { return 0xFF; }, 
+				[](storage_t&, uint16_t, uint8_t) constexpr -> void {}
+			});
 
-			([]<typename Handler>(auto& table) constexpr {
-				constexpr auto addr_range = Handler::address_range();
-				fill_table_for_handler<Handler>(table, std::make_index_sequence<addr_range.size()>{});
-			}.template operator()<Handlers>(table), ...);
+			([](auto& table) constexpr {
+				constexpr auto addr_range = Handlers::address_range();
+				fill_table_for_handler<Handlers>(table, std::make_index_sequence<addr_range.size()>{});
+			}(table), ...);
 
 			return table;
 		}();
@@ -126,32 +219,24 @@ namespace yahbog {
 
 		constexpr static auto table_size_bytes = sizeof(jump_table);
 
-		constexpr bool all_valid() const {
+		constexpr bool all_valid() const noexcept {
 			return ((std::get<detail::index_of<Handlers, Handlers...>>(m_handlers) != nullptr) && ...);
 		}
 
 		template<typename T>
-		constexpr void set_handler(T* handler) {
+		constexpr void set_handler(T* handler) noexcept {
 			constexpr auto idx = detail::index_of<T, Handlers...>();
 			static_assert(idx < sizeof...(Handlers), "Handler not found");
 
 			std::get<idx>(m_handlers) = handler;
 		}
 
-		constexpr uint8_t read(uint16_t addr) {
-			auto handler = jump_table[addr].read;
-			if (handler) {
-				return handler(m_handlers, addr);
-			}
-			else throw std::out_of_range(std::format("No read handler found for address: {:04X}", addr));
+		constexpr uint8_t read(uint16_t addr) noexcept {
+			return jump_table[addr].read(m_handlers, addr);
 		}
 
-		constexpr void write(uint16_t addr, uint8_t data) {
-			auto handler = jump_table[addr].write;
-			if (handler) {
-				handler(m_handlers, addr, data);
-			}
-			else throw std::out_of_range(std::format("No write handler found for address: {:04X}", addr));
+		constexpr void write(uint16_t addr, uint8_t data) noexcept {
+			jump_table[addr].write(m_handlers, addr, data);
 		}
 	};
 

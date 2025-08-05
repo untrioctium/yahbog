@@ -116,10 +116,11 @@ struct test_info {
 			mem.memory[addr] = value;
 		}
 
-		auto reader = yahbog::read_fn_t{ [&mem](uint16_t addr) { return mem.read(addr); } };
-		auto writer = yahbog::write_fn_t{ [&mem](uint16_t addr, uint8_t value) { mem.write(addr, value); } };
+		auto mem_fns = yahbog::mem_fns_t{};
+		mem_fns.read = [&mem](uint16_t addr) { return mem.read(addr); };
+		mem_fns.write = [&mem](uint16_t addr, uint8_t value) { mem.write(addr, value); };
 
-		yahbog::cpu cpu( &reader, &writer );
+		yahbog::cpu cpu( &mem_fns );
 		cpu.reset();
 		cpu.load_registers(initial_state.regs);
 		cpu.prefetch();
@@ -196,7 +197,8 @@ std::optional<std::uint16_t> get_opcode_from_test_name(std::string_view name) {
 }
 
 bool run_single_step_tests() {
-			TestSuite::test_suite_runner suite("SM83 Single Step Tests");
+	
+	test_suite::test_suite_runner suite("SM83 Single Step Tests");
 	suite.start();
 
 	if(!std::filesystem::exists(TEST_DATA_DIR "/sm83.zip")) {
@@ -220,7 +222,7 @@ bool run_single_step_tests() {
 	for (auto i = 0; i < archive_total; i++) {
 		zip_entry_openbyindex(archive, i);
 		std::string_view name = zip_entry_name(archive);
-		if (name.ends_with("json") && !name.ends_with("10.json")) {
+		if (name.ends_with("json") && !name.ends_with("/10.json")) {
 			files.insert(i);
 			file_total++;
 		}
@@ -239,7 +241,7 @@ bool run_single_step_tests() {
 	std::memset(test_results.data(), 0, test_results.size());
 
 	// Loading progress
-			TestSuite::progress_tracker load_progress(file_total);
+			test_suite::progress_tracker load_progress(file_total);
 	load_progress.start("Loading tests...");
 
 	std::size_t fc = 0;
@@ -269,7 +271,7 @@ bool run_single_step_tests() {
 	suite.print_info("⚡ Running tests with " + std::to_string(num_threads) + " threads...");
 
 	// Test execution progress
-			TestSuite::progress_tracker test_progress(file_total);
+	test_suite::progress_tracker test_progress(file_total);
 	test_progress.start("Running...");
 
 	const auto per_thread = test_data.size() / num_threads;
@@ -293,7 +295,6 @@ bool run_single_step_tests() {
 
 					if(!result) {
 						results[i] = 0;
-						break;
 					}
 				}
 			}

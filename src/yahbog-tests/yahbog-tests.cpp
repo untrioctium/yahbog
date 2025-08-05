@@ -124,10 +124,10 @@ namespace test_output {
 }
 
 // Common test suite functionality
-namespace TestSuite {
+namespace test_suite {
 	// Shared emulator setup with standard Game Boy initial state
-	static std::unique_ptr<yahbog::emulator> create_emulator() {
-		auto emu = std::make_unique<yahbog::emulator>();
+	std::unique_ptr<yahbog::emulator> create_emulator(yahbog::hardware_mode mode) {
+		auto emu = std::make_unique<yahbog::emulator>(mode);
 		
 		// Standard Game Boy initial register state
 		auto regs = yahbog::registers{};
@@ -141,69 +141,55 @@ namespace TestSuite {
 		return emu;
 	}
 
-	emulator_result run_rom_with_serial_check(const std::filesystem::path& rom_path) {
+	emulator_result run_rom_with_serial_check(const std::filesystem::path& rom_path, yahbog::hardware_mode mode) {
 		auto start_time = std::chrono::high_resolution_clock::now();
-		auto emu = create_emulator();
+		auto emu = create_emulator(mode);
 		
 		std::string serial_data{};
+		bool serial_written = false;
 		std::size_t cycle_count = 0;
 		const std::size_t max_cycles = 100000000; // 100M cycles safety limit
 
 		// Hook for serial output detection
-		emu->hook_writing([&serial_data](uint16_t addr, uint8_t value) {
-			// ignore audio registers
-			if(addr >= 0xFF10 && addr <= 0xFF3F) {
-				return true;
-			}
-
-			// ignore serial transfer registers
-			if(addr == 0xFF02) {
-				return true;
-			}
-
-			// ignore joypad
-			if(addr == 0xFF00) {
-				return true;
-			}
-
+		emu->hook_writing([&serial_data, &serial_written](uint16_t addr, uint8_t value) {
 			// capture serial transfer data
-			if(addr == 0xFF01) {
+			if(addr == 0xFF01) [[unlikely]] {
 				serial_data += static_cast<char>(value);
+				serial_written = true;
 				return true;
 			}
 
 			return false;
 		});
 
-		emu->hook_reading([](uint16_t addr) -> yahbog::emulator::reader_hook_response {
-			if(addr == 0xFF00) {
-				return std::uint8_t{0x00};
-			}
-
+		/*emu->hook_reading([](uint16_t addr) -> yahbog::emulator::reader_hook_response {
 			// ignore audio registers
 			if(addr >= 0xFF10 && addr <= 0xFF3F) {
 				return std::uint8_t{0x00};
 			}
 
 			return {};
-		});
+		});*/
 
 		emu->rom.load_rom(rom_path.string());
 		auto& cpu = emu->z80;
 
 		// Execute until pass/fail or timeout
 		while(cycle_count < max_cycles) {
+			serial_written = false;
 			cpu.cycle();
 			cycle_count++;
 
-			if(serial_data.ends_with("Passed")) {
-				auto end_time = std::chrono::high_resolution_clock::now();
-				auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-				return {true, "", cycle_count, duration};
-			} else if(serial_data.ends_with("Failed")) {
-				auto end_time = std::chrono::high_resolution_clock::now();
-				auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-				return {false, "Test reported failure via serial output", cycle_count, duration};
+			if(serial_written) [[unlikely]] {
+				if(serial_data.ends_with("Passed")) {
+					auto end_time = std::chrono::high_resolution_clock::now();
+					auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+					return {true, "", cycle_count, duration};
+				} else if(serial_data.ends_with("Failed")) {
+					auto end_time = std::chrono::high_resolution_clock::now();
+					auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+					return {false, "Test reported failure via serial output", cycle_count, duration};
+				}
 			}
 		}
 
@@ -239,7 +225,7 @@ namespace TestSuite {
 		}
 
 		// Show failed test details before summary
-		if (!failed_tests.empty()) {
+		/*if (!failed_tests.empty()) {
 			std::cout << "\n" << termcolor::red << termcolor::bold << "🚨 Failed Test Details:" << termcolor::reset << "\n";
 			for (const auto& test : failed_tests) {
 				std::cout << termcolor::red << "   ❌ " << termcolor::reset << termcolor::bold << test.name << termcolor::reset;
@@ -251,7 +237,7 @@ namespace TestSuite {
 				}
 				std::cout << "\n";
 			}
-		}
+		}*/
 
 		// Calculate additional stats
 		std::stringstream extra_stats;

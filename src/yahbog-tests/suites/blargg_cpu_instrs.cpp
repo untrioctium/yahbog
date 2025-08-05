@@ -234,7 +234,7 @@ void decompress_thread(decompress_thread_state&& state) {
 
 
 
-static bool run_test(const std::filesystem::path& rom_path) {
+static bool run_test(const std::filesystem::path& rom_path, yahbog::hardware_mode mode) {
 	auto filename = rom_path.filename().string();
 	auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -272,7 +272,7 @@ static bool run_test(const std::filesystem::path& rom_path) {
 	std::jthread dt(decompress_thread, std::move(state));
 	DEFER(execution_done.request_stop());
 
-	auto emu = std::make_unique<yahbog::emulator>();
+	auto emu = std::make_unique<yahbog::emulator>(mode);
 	emu->hook_writing([](uint16_t addr, uint8_t value) {
 		// ignore audio registers
 		if(addr >= 0xFF10 && addr <= 0xFF3F) {
@@ -405,15 +405,20 @@ static bool run_test(const std::filesystem::path& rom_path) {
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 	auto real_time_ms = test_output::cycles_to_real_time_ms(cycle_count);
 	
+	auto serialized = emu->serialize();
+
 	std::cout << termcolor::green << "✅ " << std::left << std::setw(40) << filename;
 	std::cout << termcolor::yellow << std::right << std::setw(8) << duration.count() << "ms" << termcolor::reset;
-	std::cout << termcolor::dark << " (real: " << test_output::format_real_time(real_time_ms) << ", " << cycle_count << " cycles)" << termcolor::reset << "\n";
+	std::cout << termcolor::dark << " (real: " << test_output::format_real_time(real_time_ms) << ", " << cycle_count << " cycles, " << serialized.size() << " state bytes)" << termcolor::reset << "\n";
 	
+
+
+
 	return true;
 }
 
 bool run_blargg_cpu_instrs() {
-	TestSuite::test_suite_runner suite("Blargg CPU Instruction Tests");
+	test_suite::test_suite_runner suite("Blargg CPU Instruction Tests");
 	suite.start();
 
 	std::vector<std::filesystem::path> roms{};
@@ -440,7 +445,7 @@ bool run_blargg_cpu_instrs() {
 		auto filename = rom.filename().string();
 		
 		// Fast path: Try serial check first (much faster)
-		auto fast_result = TestSuite::run_rom_with_serial_check(rom);
+		auto fast_result = test_suite::run_rom_with_serial_check(rom, yahbog::hardware_mode::dmg);
 		
 		if (fast_result.passed) {
 			// Test passed with fast check - we're done!
@@ -458,7 +463,7 @@ bool run_blargg_cpu_instrs() {
 			std::cout << "Running detailed verification..." << termcolor::reset << "\n";
 			
 			auto detailed_start = std::chrono::high_resolution_clock::now();
-			bool detailed_success = run_test(rom);
+			bool detailed_success = run_test(rom, yahbog::hardware_mode::dmg);
 			auto detailed_end = std::chrono::high_resolution_clock::now();
 			auto detailed_duration = std::chrono::duration_cast<std::chrono::milliseconds>(detailed_end - detailed_start);
 			
