@@ -120,14 +120,14 @@ struct test_info {
 		mem_fns.read = [&mem](uint16_t addr) { return mem.read(addr); };
 		mem_fns.write = [&mem](uint16_t addr, uint8_t value) { mem.write(addr, value); };
 
-		yahbog::cpu cpu( &mem_fns );
-		cpu.reset();
+		yahbog::cpu cpu{};
+		cpu.reset( &mem_fns );
 		cpu.load_registers(initial_state.regs);
-		cpu.prefetch();
+		cpu.prefetch( &mem_fns );
 
 		bool ie = cpu.r().ie;
 		for (std::size_t i = 0; i < ncycles; i++) {
-			cpu.cycle();
+			cpu.cycle( &mem_fns );
 		}
 
 		auto regs = cpu.r();

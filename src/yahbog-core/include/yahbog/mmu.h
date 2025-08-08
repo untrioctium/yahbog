@@ -20,12 +20,19 @@ namespace yahbog {
 		cgb
 	};
 
+	enum class bus_state : std::uint8_t {
+		normal,
+		dma_blocked
+	};
+
 	using read_fn_t = yahbog::constexpr_function<uint8_t(uint16_t)>;
 	using write_fn_t = yahbog::constexpr_function<void(uint16_t, uint8_t)>;
 
 	struct mem_fns_t {
 		read_fn_t read;
 		write_fn_t write;
+
+		bus_state state;
 	}; 
 
 	template<typename T>

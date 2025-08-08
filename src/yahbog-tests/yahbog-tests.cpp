@@ -227,8 +227,6 @@ namespace test_suite {
 
 		const auto real_path = std::filesystem::path(TEST_DATA_DIR) / "results" / path;
 
-		std::filesystem::remove_all(std::filesystem::path(TEST_DATA_DIR) / "results");
-
 		const auto size_multiplier = 8;
 
 		std::array<std::uint8_t, yahbog::gpu::screen_width * yahbog::gpu::screen_height * 3 * size_multiplier * size_multiplier> rgb_framebuffer;
@@ -258,9 +256,9 @@ namespace test_suite {
 			}
 		}
 
-		std::filesystem::create_directories(path.parent_path());
+		std::filesystem::create_directories(real_path.parent_path());
 
-		stbi_write_png(path.string().c_str(), yahbog::gpu::screen_width * size_multiplier, yahbog::gpu::screen_height * size_multiplier, 3, rgb_framebuffer.data(), yahbog::gpu::screen_width * 3 * size_multiplier);
+		stbi_write_png(real_path.string().c_str(), yahbog::gpu::screen_width * size_multiplier, yahbog::gpu::screen_height * size_multiplier, 3, rgb_framebuffer.data(), yahbog::gpu::screen_width * 3 * size_multiplier);
 	}
 
 	test_suite_runner::test_suite_runner(const std::string& name) 

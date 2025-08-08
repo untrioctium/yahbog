@@ -119,6 +119,7 @@ namespace yahbog {
 	public:
 
 		mem_fns_t mem_fns;
+		mem_fns_t blocked_mem_fns;
 
 		wram_t wram;
 		std::unique_ptr<rom_t> rom;
@@ -131,9 +132,9 @@ namespace yahbog {
 		memory_dispatcher<address_space_size, gpu, wram_t, rom_t, timer_t, cpu, io_t> mmu;
 
 		constexpr emulator(hardware_mode mode) : 
-			mem_fns{default_reader(), default_writer()},
+			mem_fns{default_reader(), default_writer(), bus_state::normal},
+			blocked_mem_fns{blocked_reader(), blocked_writer(), bus_state::dma_blocked},
 			wram(mode),
-			z80(&mem_fns),
 			ppu(&mem_fns),
 			timer(&mem_fns)
 			{
@@ -159,11 +160,19 @@ namespace yahbog {
 		}
 
 		constexpr void tick() noexcept {
-			z80.cycle();
-			for(int i=0;i<4;++i){
-				timer.tick();
-				ppu.tick();
-			}
+			z80.cycle(mem_fns.state == bus_state::dma_blocked ? &blocked_mem_fns : &mem_fns);
+
+			timer.tick();
+			ppu.tick();
+
+			timer.tick();
+			ppu.tick();
+
+			timer.tick();
+			ppu.tick();
+
+			timer.tick();
+			ppu.tick();
 		}
 
 		constexpr read_fn_t default_reader() noexcept {
@@ -172,6 +181,25 @@ namespace yahbog {
 
 		constexpr write_fn_t default_writer() noexcept { 
 			return [this](std::uint16_t addr, std::uint8_t value) noexcept { mmu.write(addr, value); };
+		}
+
+		constexpr read_fn_t blocked_reader() noexcept {
+			return [this](std::uint16_t addr) noexcept -> std::uint8_t { 
+				if(addr < 0xFF00) {
+					return 0xFF;
+				} else {
+					return mmu.read(addr);
+				}
+			 };
+		}
+		constexpr write_fn_t blocked_writer() noexcept {
+			return [this](std::uint16_t addr, std::uint8_t value) noexcept -> void { 
+				if(addr < 0xFF00) {
+					return;
+				} else {
+					mmu.write(addr, value);
+				}
+			};
 		}
 
 		using reader_hook_response = std::variant<std::monostate, std::uint8_t>;

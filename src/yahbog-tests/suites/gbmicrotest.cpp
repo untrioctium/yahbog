@@ -24,7 +24,7 @@ test_suite::emulator_result run_gbmicrotest_test(gbmicrotest_test& test) {
 	}
 	emu->set_rom(std::move(rom));
 
-    emu->z80.reset();
+    emu->z80.reset(&emu->mem_fns);
     emu->io.reset();
     emu->ppu.reset();
 

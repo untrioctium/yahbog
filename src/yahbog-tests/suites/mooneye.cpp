@@ -74,15 +74,15 @@ test_suite::emulator_result run_mooneye_test(mooneye_test& test) {
 
 	auto rom = yahbog::rom_t::load_rom(std::move(test.rom));
 	if(!rom) {
-		return {false, "Failed to load ROM", 0, std::chrono::milliseconds{0}};
+		return {false, "Failed to load ROM (bad MBC?)", 0, std::chrono::milliseconds{0}};
 	}
 	emu->set_rom(std::move(rom));
 
-    emu->z80.reset();
+    emu->z80.reset(&emu->mem_fns);
     emu->io.reset();
     emu->ppu.reset();
 
-	const std::size_t max_cycles = static_cast<std::size_t>(180 * GB_CPU_FREQUENCY_HZ); // 180 real seconds
+	const std::size_t max_cycles = static_cast<std::size_t>(10 * GB_CPU_FREQUENCY_HZ); // 180 real seconds
 
 	std::size_t cycles = 0;
 
@@ -122,7 +122,11 @@ test_suite::emulator_result run_mooneye_test(mooneye_test& test) {
 	auto end_time = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
-	return {false, "Timeout (>180 real seconds)", cycles, duration};
+	// dump the last drawn framebuffer, might not have anything useful to show though
+	auto path = std::filesystem::path("mooneye") / (std::string(test.name) + ".png");
+	test_suite::write_framebuffer_to_file(*emu, path);
+
+	return {false, "Timeout (>10 real seconds)", cycles, duration};
 	
 }
 
@@ -212,9 +216,9 @@ bool run_mooneye() {
 			"(real: " + test_output::format_real_time(real_time_ms) + ", " + std::to_string(result.cycles_executed) + " cycles)"
 		);
 
-		//if(!result.passed) {
-		//	std::cout << termcolor::red << "   💬 " << result.failure_reason << termcolor::reset << "\n";
-		//}
+		if(!result.passed) {
+			std::cout << termcolor::red << "   💬 " << result.failure_reason << termcolor::reset << "\n";
+		}
 
 		suite.add_result(test_file.name, result.passed, result.execution_time);
 	}

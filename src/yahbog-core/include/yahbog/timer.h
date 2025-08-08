@@ -29,7 +29,7 @@ public:
 
 	constexpr explicit timer_t(mem_fns_t* mem) noexcept : mem(mem) {
 		// Power-on state observed on DMG/MGB
-		internal_counter = (0xABu << 8) | 0xCCu; //   DIV=AB  sub-div(/4)=0x33
+		internal_counter = (0xABu << 8) | 0xD0u; //   DIV=AB  sub-div(/4)=0x34
 		div = static_cast<std::uint8_t>(internal_counter >> 8);
 	}
 

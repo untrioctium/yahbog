@@ -37,3 +37,4 @@ testdata/
 .cursor/
 *.log
 imgui.ini
+callgrind.out.*

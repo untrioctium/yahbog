@@ -19,9 +19,7 @@ namespace yahbog {
 			};
 		}
 
-		constexpr cpu(mem_fns_t* mem_fns) noexcept : mem_fns(mem_fns) {}
-
-		constexpr void reset() noexcept {
+		constexpr void reset(mem_fns_t* mem_fns) noexcept {
 
 			reg.a = 0x01;
 			reg.b = 0x00;
@@ -46,14 +44,14 @@ namespace yahbog {
 		// Fetches the next instruction over one machine cycle
 		// This is only needed after resetting the CPU or handling an interrupt
 		// as the instructions themselves will handle fetching the next instruction
-		constexpr void prefetch() noexcept {
+		constexpr void prefetch(mem_fns_t* mem_fns) noexcept {
 			reg.ir = mem_fns->read(reg.pc);
 			reg.pc++;
 			m_cycles++;
 		}
 
 		// Performs one machine cycle
-		constexpr void cycle() noexcept {
+		constexpr void cycle(mem_fns_t* mem_fns) noexcept {
 
 			const auto old_ie = reg.ie;
 			const auto old_ir = reg.ir;
@@ -116,8 +114,6 @@ namespace yahbog {
 	private:
 
 		std::uint64_t m_cycles = 0;
-
-		mem_fns_t* mem_fns = nullptr;
 
 		registers reg{};
 

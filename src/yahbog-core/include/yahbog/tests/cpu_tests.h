@@ -13,13 +13,13 @@ consteval bool basic_test() {
 	mem_fns.read = [&rom](uint16_t addr) { return rom[addr]; };
 	mem_fns.write = [&rom](uint16_t addr, uint8_t value) { rom[addr] = value; };
 
-	auto z80 = yahbog::cpu{ &mem_fns };
+	auto z80 = yahbog::cpu{};
 
-	z80.reset();
-	z80.prefetch();
+	z80.reset(&mem_fns);
+	z80.prefetch(&mem_fns);
 	
 	while(z80.r().ir != 0x00) {
-		z80.cycle();
+		z80.cycle(&mem_fns);
 	}
 
 	return z80.r().b == 0x42;

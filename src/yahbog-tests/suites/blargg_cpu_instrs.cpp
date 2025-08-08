@@ -238,7 +238,7 @@ static bool run_test(const std::filesystem::path& rom_path, yahbog::hardware_mod
 	auto filename = rom_path.filename().string();
 	auto start_time = std::chrono::high_resolution_clock::now();
 
-	auto number_start = filename.find_first_not_of("0");
+	auto number_start = filename.find_first_not_of('0');
 	auto number_end = filename.find_first_of('-');
 
 	if(number_start == std::string::npos || number_end == std::string::npos) {
@@ -329,7 +329,7 @@ static bool run_test(const std::filesystem::path& rom_path, yahbog::hardware_mod
 		do {
 			next_instruction = emu->z80.r().ir;
 			do {
-				emu->z80.cycle();
+				emu->z80.cycle(&emu->mem_fns);
 				cycle_count++;
 			} while (cpu.r().mupc != 0);
 			instruction_count++;
@@ -359,11 +359,11 @@ static bool run_test(const std::filesystem::path& rom_path, yahbog::hardware_mod
 			
 			constexpr auto format_interrupts = [](std::uint8_t reg) {
 				return std::format("{}{}{}{}{}",
-					(reg & 16) ? "J" : ".",
-					(reg & 8) ? "S" : ".",
-					(reg & 4) ? "T" : ".",
-					(reg & 2) ? "L" : ".",
-					(reg & 1) ? "V" : "."
+					(reg & 16u) ? "J" : ".",
+					(reg & 8u) ? "S" : ".",
+					(reg & 4u) ? "T" : ".",
+					(reg & 2u) ? "L" : ".",
+					(reg & 1u) ? "V" : "."
 				);
 			};
 			

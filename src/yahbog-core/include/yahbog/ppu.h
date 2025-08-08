@@ -71,6 +71,8 @@ namespace yahbog {
 				&gpu::dma,
 				&gpu::dma_source,
 				&gpu::dma_offset,
+				&gpu::dma_countdown,
+				&gpu::queued_dma_pending,
 				&gpu::bgp,
 				&gpu::obp0,
 				&gpu::obp1,
@@ -304,25 +306,64 @@ namespace yahbog {
 		std::uint8_t dma{};
 
 		std::uint16_t dma_source{};
-		std::uint8_t dma_offset = std::numeric_limits<std::uint8_t>::max();
+		std::uint16_t dma_offset = std::numeric_limits<std::uint16_t>::max();
+		std::uint8_t dma_countdown = 0;
+		std::uint8_t dma_countdown_queued = 0;
+		bool queued_dma_pending = false;
 
 		constexpr void write_dma(std::uint16_t addr, std::uint8_t value) noexcept {
 			ASSUME_IN_RANGE(addr, 0xFF46, 0xFF46);
 
+			dma = value;
+
+			if(dma_offset != std::numeric_limits<std::uint16_t>::max()) {
+				queued_dma_pending = true;
+				dma_countdown_queued = 8;
+				return;
+			}
+
 			dma_source = value * 0x100;
 			dma_offset = 0;
+			dma_countdown = 8;
 		}
 
 		constexpr void dma_tick() noexcept {
-			if(dma_offset == std::numeric_limits<std::uint8_t>::max()) [[likely]] {
+			if(dma_offset == std::numeric_limits<std::uint16_t>::max()) [[likely]] {
 				return;
 			}
+
+			if(dma_countdown > 0) {
+				dma_countdown--;
+
+				if(dma_countdown == 0) {
+					mem_fns->state = bus_state::dma_blocked;
+				}
+
+				return;
+			}
+
+			if(dma_countdown_queued > 0) {
+				dma_countdown_queued--;
+				return;
+			}
+
+			if(dma_countdown_queued == 0 && queued_dma_pending) {
+				dma_source = dma * 0x100;
+				queued_dma_pending = false;
+				dma_offset = 0;
+				dma_countdown = 0;
+			}
 			
-			write_oam<true>(0xFE00 + dma_offset, mem_fns->read(dma_source + dma_offset));
+			if(dma_offset % 4 == 0) {
+				write_oam<true>(0xFE00 + dma_offset / 4, mem_fns->read(dma_source + dma_offset / 4));
+			}
 			dma_offset++;
 
-			if(dma_offset == 0xA0) {
-				dma_offset = std::numeric_limits<std::uint8_t>::max();
+			if(dma_offset == 640) {
+
+				dma_offset = std::numeric_limits<std::uint16_t>::max();
+				mem_fns->state = bus_state::normal;
+
 			}
 		}
 
