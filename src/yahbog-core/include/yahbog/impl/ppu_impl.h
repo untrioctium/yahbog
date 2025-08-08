@@ -5,13 +5,15 @@
 
 namespace yahbog {
 
-	constexpr void gpu::tick(std::uint8_t cycles) noexcept {
+	constexpr void gpu::tick() noexcept {
+
+		dma_tick();
 
 		if(!lcdc.v.lcd_display) [[unlikely]] {
 			return;
 		}
 
-		mode_clock += cycles;
+		mode_clock ++;
 		switch (lcd_status.v.mode) {
 		case mode_t::oam: // mode 2
 			if (mode_clock >= 80) {
@@ -37,6 +39,7 @@ namespace yahbog {
 				ly++;
 				if (ly == 144) {
 					lcd_status.v.mode = mode_t::vblank;
+					swap_buffers();
 
 					request_interrupt(interrupt::vblank, mem_fns);
 
@@ -78,12 +81,41 @@ namespace yahbog {
 		}
 	}
 
+	constexpr static auto extract_bits(std::uint8_t value, std::uint8_t start, std::uint8_t size) noexcept {
+		return (value >> start) & ((1 << size) - 1);
+	}
+
 	constexpr void gpu::render_scanline() noexcept
 	{
-		const auto map_offset = (lcdc.v.bg_tile_map ? 0x1C00 : 0x1800) + (((ly + scy) & 255) >> 3);
-		const auto line_offset = scx >> 3;
+		// Each BG map row is 32 bytes wide; include the row stride in the offset
+		const auto map_offset = (lcdc.v.bg_tile_map ? 0x1C00 : 0x1800)
+			+ ((((ly + scy) & 255) >> 3) * 32);
+		auto line_offset = static_cast<std::uint32_t>(scx) >> 3u;
 
 		const auto tile_y = (ly + scy) & 7;
-		const auto tile_x = scx & 7;
+		auto tile_x = scx & 7;
+
+		auto tile = static_cast<std::uint16_t>(vram[map_offset + line_offset]);
+
+		// In 0x8800 addressing mode (bg_tile_data == 0), the tile index is signed
+		if(!lcdc.v.bg_tile_data && tile < 128) tile += 256;
+
+		for(std::size_t i = 0; i < 160; i++) {
+			const auto palette_idx = tile_data[tile][tile_y][tile_x];
+			const auto color_idx = extract_bits(bgp.as_byte(), palette_idx * 2, 2);
+
+			set_pixel(i, ly, color_idx);
+
+			tile_x++;
+
+			if(tile_x == 8) {
+				tile_x = 0;
+				line_offset = (line_offset + 1) & 31;
+				tile = vram[map_offset + line_offset];
+
+				if(!lcdc.v.bg_tile_data && tile < 128) tile += 256;
+			}
+		}
+		
 	}
 }

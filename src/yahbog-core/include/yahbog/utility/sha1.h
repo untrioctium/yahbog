@@ -186,9 +186,9 @@ namespace yahbog {
 			auto w = std::array<std::uint32_t, 80>{};
 
 			for (std::size_t i = 0; i < 16; i++) {
-				w[i] = static_cast<std::uint32_t>(block[i * 4 + 0]) << 24;
-				w[i] |= static_cast<std::uint32_t>(block[i * 4 + 1]) << 16;
-				w[i] |= static_cast<std::uint32_t>(block[i * 4 + 2]) << 8;
+				w[i] = static_cast<std::uint32_t>(block[i * 4 + 0]) << 24u;
+				w[i] |= static_cast<std::uint32_t>(block[i * 4 + 1]) << 16u;
+				w[i] |= static_cast<std::uint32_t>(block[i * 4 + 2]) << 8u;
 				w[i] |= static_cast<std::uint32_t>(block[i * 4 + 3]);
 			}
 

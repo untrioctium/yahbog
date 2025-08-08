@@ -41,47 +41,18 @@ namespace yahbog {
 			return std::array{
 				address_range_t<rom_t>{0x0000, 0x3FFF, &rom_t::read_bank00, &rom_t::write_bank00},
 				address_range_t<rom_t>{0x4000, 0x7FFF, &rom_t::read_banked, &rom_t::write_banked},
-				address_range_t<rom_t>{0xA000, 0xBFFF, &rom_t::read_ext_ram, &rom_t::write_ext_ram}
+				address_range_t<rom_t>{0xA000, 0xBFFF, &rom_t::read_ext_ram, &rom_t::write_ext_ram},
 			};
 		}
 
-		constexpr uint8_t read_bank00(uint16_t addr) { 
-			ASSUME_IN_RANGE(addr, 0x0000, 0x3FFF);
+		constexpr virtual ~rom_t() = default;
 
-			return rom_data[addr];
-		}
-
-		constexpr void write_bank00(uint16_t addr, uint8_t value) {}
-		
-		constexpr uint8_t read_banked(uint16_t addr) {
-			ASSUME_IN_RANGE(addr, 0x4000, 0x7FFF);
-
-			return rom_data[addr - 0x4000 + rom_bank_idx * rom_bank_size];
-		}
-
-		constexpr void write_banked(uint16_t addr, uint8_t value) {}
-
-		constexpr uint8_t read_ext_ram(uint16_t addr) {
-			ASSUME_IN_RANGE(addr, 0xA000, 0xBFFF);
-
-			if(ram_enabled()) {
-				return ext_ram[addr - 0xA000 + ram_bank_idx * ram_bank_size];
-			}
-			else return 0xFF;
-		}
-
-		constexpr void write_ext_ram(uint16_t addr, uint8_t value) {
-			ASSUME_IN_RANGE(addr, 0xA000, 0xBFFF);
-
-			if(ram_enabled()) {
-				ext_ram[addr - 0xA000 + ram_bank_idx * ram_bank_size] = value;
-			}
-		}
+		constexpr virtual bool has_battery_backed_ram() const noexcept = 0;
 
 		constexpr const rom_header_t& header() const { return header_; }
 
-		bool load_rom(const std::filesystem::path& path);
-		constexpr bool load_rom(std::vector<std::uint8_t>&& data);
+		static std::unique_ptr<rom_t> load_rom(const std::filesystem::path& path);
+		constexpr static std::unique_ptr<rom_t> load_rom(std::vector<std::uint8_t>&& data);
 
 		consteval static auto serializable_members() {
 			return std::tuple{
@@ -89,23 +60,37 @@ namespace yahbog {
 				&rom_t::ext_ram,
 				&rom_t::header_,
 				&rom_t::rom_bank_idx,
-				&rom_t::ram_bank_idx,
-				&rom_t::crc32_checksum
+				&rom_t::ext_ram_bank_idx,
+				&rom_t::crc32_checksum,
+				&rom_t::impl_regs,
 			};
 		}
-	private:
 
-		constexpr bool ram_enabled() const { return ram_bank_idx != (std::numeric_limits<std::uint16_t>::max)(); }
+	protected:
+
+		constexpr virtual std::uint8_t read_bank00(std::uint16_t addr) noexcept = 0;
+		constexpr virtual std::uint8_t read_banked(std::uint16_t addr) noexcept = 0;
+		constexpr virtual std::uint8_t read_ext_ram(std::uint16_t addr) noexcept = 0;
+		constexpr virtual void write_ext_ram(std::uint16_t addr, std::uint8_t value) noexcept = 0;
+		constexpr virtual void write_banked(std::uint16_t addr, std::uint8_t value) noexcept = 0;
+		constexpr virtual void write_bank00(std::uint16_t addr, std::uint8_t value) noexcept = 0;
+
+		constexpr static auto ext_ram_disabled_value = (std::numeric_limits<std::uint16_t>::max)();
+
+		constexpr bool ext_ram_enabled() const { return ext_ram_bank_idx != ext_ram_disabled_value; }
 
 		constexpr static auto rom_bank_size = 0x4000; // 16KB
-		constexpr static auto ram_bank_size = 0x2000; // 8KB
+		constexpr static auto ext_ram_bank_size = 0x2000; // 8KB
 
 		std::vector<std::uint8_t> rom_data;
 		std::vector<std::uint8_t> ext_ram;
 		rom_header_t header_;
 		std::uint16_t rom_bank_idx = 1;
-		std::uint16_t ram_bank_idx = (std::numeric_limits<std::uint16_t>::max)();
+		std::uint16_t ext_ram_bank_idx = ext_ram_disabled_value;
 		crc32_t crc32_checksum;
+
+		// Implementation-specific registers
+		std::array<std::uint8_t, 16> impl_regs;
 	};
 
 }

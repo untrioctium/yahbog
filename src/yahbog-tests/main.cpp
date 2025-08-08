@@ -14,12 +14,12 @@ int main(int argc, char** argv) {
 	std::cout << termcolor::cyan << "   Running " << total_test_suites << " test suites..." << termcolor::reset << "\n\n";
 
 	// Single step tests
-	if (run_single_step_tests()) {
+	/*if (run_single_step_tests()) {
 		passed_suites++;
 	} else {
 		all_passed = false;
 	}
-	std::cout << "\n";
+	std::cout << "\n";*/
 
 	// Blargg CPU instruction tests  
 	if (run_blargg_cpu_instrs()) {

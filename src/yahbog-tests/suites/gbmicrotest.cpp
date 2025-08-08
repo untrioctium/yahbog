@@ -18,7 +18,12 @@ test_suite::emulator_result run_gbmicrotest_test(gbmicrotest_test& test) {
 	auto start_time = std::chrono::high_resolution_clock::now();
 	auto emu = test_suite::create_emulator(yahbog::hardware_mode::dmg);
 
-	emu->rom.load_rom(std::move(test.rom));
+	auto rom = yahbog::rom_t::load_rom(std::move(test.rom));
+	if(!rom) {
+		return {false, "Failed to load ROM", 0, std::chrono::milliseconds{0}};
+	}
+	emu->set_rom(std::move(rom));
+
     emu->z80.reset();
     emu->io.reset();
     emu->ppu.reset();

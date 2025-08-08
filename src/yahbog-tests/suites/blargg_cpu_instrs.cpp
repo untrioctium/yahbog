@@ -302,7 +302,13 @@ static bool run_test(const std::filesystem::path& rom_path, yahbog::hardware_mod
 	regs.sp = 0xFFFE; regs.pc = 0x0100;
 
 	emu->z80.load_registers(regs);
-	emu->rom.load_rom(rom_path.string());
+	auto rom = yahbog::rom_t::load_rom(rom_path.string());
+	if(!rom) {
+		std::cout << termcolor::red << "❌ " << std::left << std::setw(40) << filename 
+				  << "Failed to load ROM" << termcolor::reset << "\n";
+		return false;
+	}
+	emu->set_rom(std::move(rom));
 
 	auto& cpu = emu->z80;
 	auto& mem = emu->mmu;

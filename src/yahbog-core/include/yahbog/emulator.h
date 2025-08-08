@@ -10,6 +10,7 @@
 #include <yahbog/ppu.h>
 #include <yahbog/rom.h>
 #include <yahbog/io.h>
+#include <yahbog/timer.h>
 
 namespace yahbog {
 
@@ -120,23 +121,25 @@ namespace yahbog {
 		mem_fns_t mem_fns;
 
 		wram_t wram;
-		rom_t rom;
+		std::unique_ptr<rom_t> rom;
 		cpu z80;
 		gpu ppu;
+		timer_t timer;
 		io_t io;		
 
 		constexpr static std::size_t address_space_size = std::numeric_limits<std::uint16_t>::max() + 1;
-		memory_dispatcher<address_space_size, gpu, wram_t, rom_t, cpu, io_t> mmu;
+		memory_dispatcher<address_space_size, gpu, wram_t, rom_t, timer_t, cpu, io_t> mmu;
 
 		constexpr emulator(hardware_mode mode) : 
 			mem_fns{default_reader(), default_writer()},
 			wram(mode),
 			z80(&mem_fns),
-			ppu(&mem_fns)
+			ppu(&mem_fns),
+			timer(&mem_fns)
 			{
 				mmu.set_handler(&wram);
 				mmu.set_handler(&ppu);
-				mmu.set_handler(&rom);
+				mmu.set_handler(&timer);
 				mmu.set_handler(&z80);
 				mmu.set_handler(&io);
 			}
@@ -146,12 +149,21 @@ namespace yahbog {
 		constexpr emulator& operator=(const emulator& other) = delete;
 		constexpr emulator& operator=(emulator&& other) noexcept = delete;
 
+		constexpr void set_rom(std::unique_ptr<rom_t>&& rom) {
+			this->rom = std::move(rom);
+			if(!this->rom) {
+				return;
+			}
+
+			mmu.set_handler(this->rom.get());
+		}
+
 		constexpr void tick() noexcept {
 			z80.cycle();
-			ppu.tick(1);
-			ppu.tick(1);
-			ppu.tick(1);
-			ppu.tick(1);
+			for(int i=0;i<4;++i){
+				timer.tick();
+				ppu.tick();
+			}
 		}
 
 		constexpr read_fn_t default_reader() noexcept {
@@ -201,15 +213,22 @@ namespace yahbog {
 			hasher.process_bytes("io");
 			io_t::add_version_signature(hasher);
 
+			hasher.process_bytes("timer");
+			timer_t::add_version_signature(hasher);
+
 			return hasher.get_digest();
 		}();
 
 		constexpr std::vector<std::uint8_t> serialize() const noexcept {
 
+			if(!rom) {
+				return {};
+			}
+
 			const std::size_t size = sizeof(version_signature)
 				+ wram.serialized_size()
-				+ rom.serialized_size()
-				+ z80.serialized_size()
+				+ rom->serialized_size()
+				+ z80.serialized_size() + timer.serialized_size()
 				+ ppu.serialized_size()
 				+ io.serialized_size();
 
@@ -218,8 +237,9 @@ namespace yahbog {
 
 			data_view = write_to_span(data_view, version_signature);
 			data_view = wram.serialize(data_view);
-			data_view = rom.serialize(data_view);
+			data_view = rom->serialize(data_view);
 			data_view = z80.serialize(data_view);
+			data_view = timer.serialize(data_view);
 			data_view = ppu.serialize(data_view);
 			data_view = io.serialize(data_view);
 
@@ -229,15 +249,20 @@ namespace yahbog {
 		enum class deserialize_result {
 			success,
 			wrong_signature,
-			wrong_size
+			wrong_size,
+			rom_not_loaded
 		};
 
 		constexpr deserialize_result deserialize(std::span<const std::uint8_t> data) noexcept {
 
+			if(!rom) {
+				return deserialize_result::rom_not_loaded;
+			}
+
 			const std::size_t expected_size = sizeof(version_signature)
 				+ wram.serialized_size()
-				+ rom.serialized_size()
-				+ z80.serialized_size()
+				+ rom->serialized_size()
+				+ z80.serialized_size() + timer.serialized_size()
 				+ ppu.serialized_size()
 				+ io.serialized_size();
 
@@ -252,8 +277,9 @@ namespace yahbog {
 			}
 
 			data = wram.deserialize(data);
-			data = rom.deserialize(data);
+			data = rom->deserialize(data);
 			data = z80.deserialize(data);
+			data = timer.deserialize(data);
 			data = ppu.deserialize(data);
 			data = io.deserialize(data);
 

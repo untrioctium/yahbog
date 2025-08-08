@@ -25,9 +25,14 @@ FetchContent_MakeAvailable(termcolor)
 FetchContent_Declare(readerwriterqueue URL https://github.com/cameron314/readerwriterqueue/archive/refs/tags/v1.0.7.tar.gz)
 FetchContent_MakeAvailable(readerwriterqueue)
 
+# stb
+FetchContent_Declare(stb URL https://github.com/nothings/stb/archive/refs/heads/master.zip)
+FetchContent_MakeAvailable(stb)
+
+
 set_target_properties(yahbog-tests PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
-target_include_directories(yahbog-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(yahbog-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${stb_SOURCE_DIR})
 
 target_precompile_headers(yahbog-tests REUSE_FROM yahbog-core)
 

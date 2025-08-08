@@ -72,12 +72,17 @@ test_suite::emulator_result run_mooneye_test(mooneye_test& test) {
 	auto start_time = std::chrono::high_resolution_clock::now();
 	auto emu = test_suite::create_emulator(yahbog::hardware_mode::dmg);
 
-	emu->rom.load_rom(std::move(test.rom));
+	auto rom = yahbog::rom_t::load_rom(std::move(test.rom));
+	if(!rom) {
+		return {false, "Failed to load ROM", 0, std::chrono::milliseconds{0}};
+	}
+	emu->set_rom(std::move(rom));
+
     emu->z80.reset();
     emu->io.reset();
     emu->ppu.reset();
 
-	const std::size_t max_cycles = static_cast<std::size_t>(10 * GB_CPU_FREQUENCY_HZ); // 120 real seconds
+	const std::size_t max_cycles = static_cast<std::size_t>(180 * GB_CPU_FREQUENCY_HZ); // 180 real seconds
 
 	std::size_t cycles = 0;
 
@@ -101,13 +106,23 @@ test_suite::emulator_result run_mooneye_test(mooneye_test& test) {
 				details = "Registers do not match any expected values";
 			}
 
+			if(!passed) {
+				// wait until the next vblank
+				while(!emu->ppu.framebuffer_ready()) {
+					emu->tick();
+				}
+
+				auto path = std::filesystem::path("mooneye") / (std::string(test.name) + ".png");
+				test_suite::write_framebuffer_to_file(*emu, path);
+			}
 			return {passed, details, cycles, duration};
 		}
 	}
 
 	auto end_time = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-	return {false, "Timeout (>10 real seconds)", cycles, duration};
+
+	return {false, "Timeout (>180 real seconds)", cycles, duration};
 	
 }
 

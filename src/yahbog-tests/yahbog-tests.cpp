@@ -1,5 +1,9 @@
 #include "yahbog-tests.h"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
+
+
 // Utility function implementations
 namespace test_output {
 	std::string repeat_unicode(const std::string& str, size_t count) {
@@ -171,23 +175,28 @@ namespace test_suite {
 			return {};
 		});*/
 
-		emu->rom.load_rom(rom_path.string());
-		auto& cpu = emu->z80;
+		auto rom = yahbog::rom_t::load_rom(rom_path.string());
+		if(!rom) {
+			return {false, "Failed to load ROM", 0, std::chrono::milliseconds{0}};
+		}
+		emu->set_rom(std::move(rom));
 
 		// Execute until pass/fail or timeout
 		while(cycle_count < max_cycles) {
 			serial_written = false;
-			cpu.cycle();
+			emu->tick();
 			cycle_count++;
 
 			if(serial_written) [[unlikely]] {
 				if(serial_data.ends_with("Passed")) {
 					auto end_time = std::chrono::high_resolution_clock::now();
 					auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
 					return {true, "", cycle_count, duration};
 				} else if(serial_data.ends_with("Failed")) {
 					auto end_time = std::chrono::high_resolution_clock::now();
 					auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
 					return {false, "Test reported failure via serial output", cycle_count, duration};
 				}
 			}
@@ -199,7 +208,60 @@ namespace test_suite {
 		return {false, "Timeout (>100M cycles)", cycle_count, duration};
 	}
 
+	void write_framebuffer_to_console(const yahbog::emulator& emulator) {
+		const auto& framebuffer = emulator.ppu.framebuffer();
+		for(std::size_t y = 0; y < yahbog::gpu::screen_height; y++) {
+			for(std::size_t x = 0; x < yahbog::gpu::screen_width; x++) {
+				auto color = emulator.ppu.get_pixel(x, y);
 
+				constexpr static std::string_view char_map[4] = {" ", "░", "▓", "█"};
+
+				std::cout << char_map[color];
+			}
+			std::cout << "\n";
+		}
+	}
+
+	void write_framebuffer_to_file(const yahbog::emulator& emulator, const std::filesystem::path& path) {
+		const auto& framebuffer = emulator.ppu.framebuffer();
+
+		const auto real_path = std::filesystem::path(TEST_DATA_DIR) / "results" / path;
+
+		std::filesystem::remove_all(std::filesystem::path(TEST_DATA_DIR) / "results");
+
+		const auto size_multiplier = 8;
+
+		std::array<std::uint8_t, yahbog::gpu::screen_width * yahbog::gpu::screen_height * 3 * size_multiplier * size_multiplier> rgb_framebuffer;
+
+		struct rgb_color {
+			std::uint8_t r, g, b;
+		};
+
+		constexpr static rgb_color color_map[4] = {
+			{0, 0, 0}, // 0
+			{64, 64, 64}, // 1
+			{128, 128, 128}, // 2
+			{255, 255, 255}, // 3
+		};
+
+		for(std::size_t y = 0; y < yahbog::gpu::screen_height; y++) {
+			for(std::size_t x = 0; x < yahbog::gpu::screen_width; x++) {
+				const auto color = emulator.ppu.get_pixel(x, y);
+				const auto& rgb = color_map[color];
+				for(std::size_t i = 0; i < size_multiplier; i++) {
+					for(std::size_t j = 0; j < size_multiplier; j++) {
+						rgb_framebuffer[(y * size_multiplier + i) * yahbog::gpu::screen_width * 3 * size_multiplier + (x * size_multiplier + j) * 3 + 0] = rgb.r;
+						rgb_framebuffer[(y * size_multiplier + i) * yahbog::gpu::screen_width * 3 * size_multiplier + (x * size_multiplier + j) * 3 + 1] = rgb.g;
+						rgb_framebuffer[(y * size_multiplier + i) * yahbog::gpu::screen_width * 3 * size_multiplier + (x * size_multiplier + j) * 3 + 2] = rgb.b;
+					}
+				}
+			}
+		}
+
+		std::filesystem::create_directories(path.parent_path());
+
+		stbi_write_png(path.string().c_str(), yahbog::gpu::screen_width * size_multiplier, yahbog::gpu::screen_height * size_multiplier, 3, rgb_framebuffer.data(), yahbog::gpu::screen_width * 3 * size_multiplier);
+	}
 
 	test_suite_runner::test_suite_runner(const std::string& name) 
 		: suite_name(name), start_time(std::chrono::high_resolution_clock::now()) {}
