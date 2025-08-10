@@ -39,8 +39,12 @@ public:
 		internal_counter++;
 
 		// Update DIV from bit 8-15
-		div = static_cast<std::uint8_t>(internal_counter >> 8);
+		div = static_cast<std::uint8_t>((internal_counter >> 8) & 0xFFu);
 
+		check_tick(old_counter);
+	}
+
+	constexpr void check_tick(std::uint32_t old_counter) noexcept {
 		if(!tac.v.enable) {
 			return;
 		}
@@ -58,6 +62,7 @@ public:
 			tima++;
 		}
 	}
+
 
 	/* ----- serialization support ----- */
 	consteval static auto serializable_members() {
@@ -90,8 +95,12 @@ private:
 
 	// ------ MMIO helpers ------
 	constexpr void write_div([[maybe_unused]] uint16_t addr, [[maybe_unused]] uint8_t) {
+
+		auto old_counter = internal_counter;
 		internal_counter = 0;
 		div = 0;
+
+		check_tick(old_counter);
 	}
 
 	constexpr void request_interrupt() noexcept {

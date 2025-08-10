@@ -316,7 +316,7 @@ namespace yahbog {
 
 			dma = value;
 
-			if(dma_offset != std::numeric_limits<std::uint16_t>::max()) {
+			if(dma_offset != std::numeric_limits<std::uint16_t>::max() && !queued_dma_pending) {
 				queued_dma_pending = true;
 				dma_countdown_queued = 8;
 				return;

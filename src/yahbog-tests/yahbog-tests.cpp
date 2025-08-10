@@ -180,6 +180,7 @@ namespace test_suite {
 			return {false, "Failed to load ROM", 0, std::chrono::milliseconds{0}};
 		}
 		emu->set_rom(std::move(rom));
+		emu->mem_fns.write(0xFF04, 0x00);
 
 		// Execute until pass/fail or timeout
 		while(cycle_count < max_cycles) {
@@ -196,6 +197,12 @@ namespace test_suite {
 				} else if(serial_data.ends_with("Failed")) {
 					auto end_time = std::chrono::high_resolution_clock::now();
 					auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+					while(!emu->ppu.framebuffer_ready()) {
+						emu->tick();
+					}
+
+					test_suite::write_framebuffer_to_console(*emu);
 
 					return {false, "Test reported failure via serial output", cycle_count, duration};
 				}
@@ -236,10 +243,10 @@ namespace test_suite {
 		};
 
 		constexpr static rgb_color color_map[4] = {
-			{0, 0, 0}, // 0
-			{64, 64, 64}, // 1
-			{128, 128, 128}, // 2
-			{255, 255, 255}, // 3
+			{255, 255, 255}, // 0
+			{128, 128, 128}, // 1
+			{64, 64, 64}, // 2
+			{0, 0, 0}, // 3
 		};
 
 		for(std::size_t y = 0; y < yahbog::gpu::screen_height; y++) {

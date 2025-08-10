@@ -31,6 +31,7 @@ namespace yahbog {
 
 			reg.pc = 0x101;
 			reg.ir = mem_fns->read(0x100);
+			m_next = opcodes::map[reg.ir].entry;
 			reg.sp = 0xFFFE;
 			reg.ime = 0;
 			reg.mupc = 0;
@@ -46,6 +47,7 @@ namespace yahbog {
 		// as the instructions themselves will handle fetching the next instruction
 		constexpr void prefetch(mem_fns_t* mem_fns) noexcept {
 			reg.ir = mem_fns->read(reg.pc);
+			m_next = opcodes::map[reg.ir].entry;
 			reg.pc++;
 			m_cycles++;
 		}
@@ -57,7 +59,7 @@ namespace yahbog {
 			const auto old_ir = reg.ir;
 
 			if(!reg.halted) {
-				opcodes::map[reg.ir](reg, mem_fns);
+				m_next = m_next(reg, mem_fns);
 			}
 			
 			if(reg.halted && (ie.read() & if_.read())) {
@@ -75,18 +77,23 @@ namespace yahbog {
 				if(ie.v.vblank && if_.v.vblank) {
 					if_.v.vblank = 0;
 					reg.ir = 0xE3;
+					m_next = opcodes::map[0xE3].entry;
 				} else if(ie.v.lcd_stat && if_.v.lcd_stat) {
 					if_.v.lcd_stat = 0;
 					reg.ir = 0xE4;
+					m_next = opcodes::map[0xE4].entry;
 				} else if(ie.v.timer && if_.v.timer) {
 					if_.v.timer = 0;
 					reg.ir = 0xEB;
+					m_next = opcodes::map[0xEB].entry;
 				} else if(ie.v.serial && if_.v.serial) {
 					if_.v.serial = 0;
 					reg.ir = 0xEC;
+					m_next = opcodes::map[0xEC].entry;
 				} else if(ie.v.joypad && if_.v.joypad) {
 					if_.v.joypad = 0;
 					reg.ir = 0xED;
+					m_next = opcodes::map[0xED].entry;
 				}
 			}
 
@@ -114,6 +121,7 @@ namespace yahbog {
 	private:
 
 		std::uint64_t m_cycles = 0;
+		next_stage_t m_next = opcodes::map[0x00].entry;
 
 		registers reg{};
 

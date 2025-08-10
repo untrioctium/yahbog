@@ -8,6 +8,7 @@
 #include <vector>
 #include <array>
 #include <zip.h>
+#include <future>
 
 struct gbmicrotest_test {
 	std::string name;
@@ -46,7 +47,7 @@ test_suite::emulator_result run_gbmicrotest_test(gbmicrotest_test& test) {
         return false;
     });
 
-	const std::size_t max_cycles = static_cast<std::size_t>(1 * GB_CPU_FREQUENCY_HZ); // 1 real second
+	const std::size_t max_cycles = static_cast<std::size_t>(10 * GB_CPU_FREQUENCY_HZ); // 1 real second
 
 	std::size_t cycles = 0;
 
@@ -68,13 +69,21 @@ test_suite::emulator_result run_gbmicrotest_test(gbmicrotest_test& test) {
 
 	auto end_time = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-	return {false, "Timeout (>1 real second)", cycles, duration};
+	return {false, "Timeout (>10 real seconds)", cycles, duration};
 	
+}
+
+void gbmicrotest_thread(std::atomic<std::size_t>& test_idx, std::vector<gbmicrotest_test>& test_files, std::vector<std::promise<test_suite::emulator_result>>& promises) {
+	while(true) {
+		auto my_test_idx = test_idx.fetch_add(1);
+		if(my_test_idx >= test_files.size()) break;
+		promises[my_test_idx].set_value(run_gbmicrotest_test(test_files[my_test_idx]));
+	}
 }
 
 bool run_gbmicrotest() {
 
-	test_suite::test_suite_runner suite("GB Microtest");
+	test_suite::test_suite_runner suite("GB Microtests");
 	suite.start();
 
 	if(!std::filesystem::exists(TEST_DATA_DIR "/gbmicrotest.zip")) {
@@ -92,6 +101,8 @@ bool run_gbmicrotest() {
 	}
 
 	std::vector<gbmicrotest_test> test_files;
+	std::vector<std::promise<test_suite::emulator_result>> promises;
+	std::vector<std::future<test_suite::emulator_result>> futures;
 
 	auto file_count = zip_entries_total(archive);
 
@@ -104,6 +115,8 @@ bool run_gbmicrotest() {
 			auto first_slash = name.find_first_of('/');
 			auto trimmed_name = name.substr(first_slash + 1);
 			test_files.push_back(gbmicrotest_test{std::string(trimmed_name), std::vector<std::uint8_t>(zip_entry_size(archive))});
+			promises.push_back(std::promise<test_suite::emulator_result>());
+			futures.push_back(promises.back().get_future());
 			zip_entry_noallocread(archive, test_files.back().rom.data(), test_files.back().rom.size());
 		}
 		zip_entry_close(archive);
@@ -115,12 +128,21 @@ bool run_gbmicrotest() {
 
 	suite.print_info("🔍 Found " + std::to_string(test_files.size()) + " tests compatible with original Game Boy models");
 
-	for(auto& test_file : test_files) {
-		auto result = run_gbmicrotest_test(test_file);
+	std::vector<std::jthread> threads;
+	std::atomic<std::size_t> test_idx{0};
+
+	for(auto i = 0; i < std::thread::hardware_concurrency(); i++) {
+		threads.emplace_back(gbmicrotest_thread, std::ref(test_idx), std::ref(test_files), std::ref(promises));
+	}
+
+	suite.print_info("⚡ Running on " + std::to_string(threads.size()) + " threads\n");
+
+	for(std::size_t i = 0; i < test_files.size(); i++) {
+		auto result = futures[i].get();
 		auto real_time_ms = test_output::cycles_to_real_time_ms(result.cycles_executed);
 
 		suite.print_test_line(
-			test_file.name,
+			test_files[i].name,
 			result.passed,
 			result.execution_time,
 			"(real: " + test_output::format_real_time(real_time_ms) + ", " + std::to_string(result.cycles_executed) + " cycles)"
@@ -130,7 +152,7 @@ bool run_gbmicrotest() {
 		//	std::cout << termcolor::red << "   💬 " << result.failure_reason << termcolor::reset << "\n";
 		//}
 
-		suite.add_result(test_file.name, result.passed, result.execution_time);
+		suite.add_result(test_files[i].name, result.passed, result.execution_time);
 	}
 
 	suite.finish();

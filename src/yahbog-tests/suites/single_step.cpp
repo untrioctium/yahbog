@@ -279,6 +279,8 @@ bool run_single_step_tests() {
 	std::atomic<int> completed_tests{0};
 
 	std::span<const std::string> data_span{ test_data.data(), test_data.size() };
+
+	
 	std::span<std::uint8_t> results_span{ test_results.data(), test_results.size() };
 
 	// Enhanced test thread function with progress tracking
@@ -288,6 +290,8 @@ bool run_single_step_tests() {
 
 			try {
 				nlohmann::json j = nlohmann::json::parse(data[i]);
+
+				test_names[i] = j[0]["name"];
 
 				for (auto& test : j) {
 					test_info info = test_info::from_json(test);
@@ -331,6 +335,7 @@ bool run_single_step_tests() {
 		} else {
 			failed++;
 			suite.add_result(test_names[i], false, std::chrono::milliseconds(0));
+			std::cout << termcolor::red << "❌ " << test_names[i] << termcolor::reset << "\n";
 		}
 	}
 
