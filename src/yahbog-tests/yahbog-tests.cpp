@@ -181,6 +181,7 @@ namespace test_suite {
 		}
 		emu->set_rom(std::move(rom));
 		emu->mem_fns.write(0xFF04, 0x00);
+		emu->ppu.reset();
 
 		// Execute until pass/fail or timeout
 		while(cycle_count < max_cycles) {

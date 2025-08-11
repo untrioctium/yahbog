@@ -36,6 +36,7 @@ FetchContent_MakeAvailable(zlib)
 add_library(ZLIB::ZLIB ALIAS zlib)
 set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" "${zlib_BINARY_DIR}")
 
+#set(CMAKE_CXX_CLANG_TIDY "clang-tidy-19")
 add_subdirectory(src/yahbog-core)
 add_subdirectory(src/yahbog-tests)
 add_subdirectory(src/yahbog-gui)

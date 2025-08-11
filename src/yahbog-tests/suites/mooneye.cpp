@@ -84,7 +84,7 @@ test_suite::emulator_result run_mooneye_test(mooneye_test& test) {
     emu->io.reset();
     emu->ppu.reset();
 
-	const std::size_t max_cycles = static_cast<std::size_t>(180 * GB_CPU_FREQUENCY_HZ); // 180 real seconds
+	const std::size_t max_cycles = static_cast<std::size_t>(5 * GB_CPU_FREQUENCY_HZ); // 180 real seconds
 
 	std::size_t cycles = 0;
 
@@ -128,7 +128,7 @@ test_suite::emulator_result run_mooneye_test(mooneye_test& test) {
 	auto path = std::filesystem::path("mooneye") / (std::string(test.name) + ".png");
 	test_suite::write_framebuffer_to_file(*emu, path);
 
-	return {false, "Timeout (>180 real seconds)", cycles, duration};
+	return {false, "Timeout (>5 real seconds)", cycles, duration};
 	
 }
 

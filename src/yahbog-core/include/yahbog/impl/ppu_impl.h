@@ -5,6 +5,70 @@
 
 namespace yahbog {
 
+	constexpr void gpu::oam_tick() noexcept {
+		if (mode_clock >= 80) {
+			mode_clock = 0;
+			lcd_status.v.mode = mode_t::vram;
+			mode_ptr = &gpu::vram_tick;
+		}
+	}
+
+	constexpr void gpu::vram_tick() noexcept {
+		if (mode_clock >= 172) {
+			mode_clock = 0;
+			lcd_status.v.mode = mode_t::hblank;
+			mode_ptr = &gpu::hblank_tick;
+
+			if(lcd_status.v.mode_hblank) {
+				request_interrupt(interrupt::stat, mem_fns);
+			}
+
+			render_scanline();
+		}
+	}
+
+	constexpr void gpu::hblank_tick() noexcept {
+		if (mode_clock >= 204) {
+			mode_clock = 0;
+			ly++;
+			if (ly == 144) {
+				lcd_status.v.mode = mode_t::vblank;
+				mode_ptr = &gpu::vblank_tick;
+				swap_buffers();
+
+				request_interrupt(interrupt::vblank, mem_fns);
+
+				if(lcd_status.v.mode_vblank) {
+					request_interrupt(interrupt::stat, mem_fns);
+				}
+			}
+			else {
+				lcd_status.v.mode = mode_t::oam;
+				mode_ptr = &gpu::oam_tick;
+
+				if(lcd_status.v.mode_oam) {
+					request_interrupt(interrupt::stat, mem_fns);
+				}
+			}
+		}
+	}
+
+	constexpr void gpu::vblank_tick() noexcept {
+		if (mode_clock >= 456) {
+			mode_clock = 0;
+			ly++;
+			if (ly > 153) {
+				ly = 0;
+				lcd_status.v.mode = mode_t::oam;
+				mode_ptr = &gpu::oam_tick;
+
+				if(ly < 144 && lcd_status.v.mode_oam) {
+					request_interrupt(interrupt::stat, mem_fns);
+				}
+			}
+		}
+	}
+
 	constexpr void gpu::tick() noexcept {
 
 		dma_tick();
@@ -14,64 +78,7 @@ namespace yahbog {
 		}
 
 		mode_clock ++;
-		switch (lcd_status.v.mode) {
-		case mode_t::oam: // mode 2
-			if (mode_clock >= 80) {
-				mode_clock = 0;
-				lcd_status.v.mode = mode_t::vram;
-			}
-			break;
-		case mode_t::vram: // mode 3
-			if (mode_clock >= 172) {
-				mode_clock = 0;
-				lcd_status.v.mode = mode_t::hblank;
-
-				if(lcd_status.v.mode_hblank) {
-					request_interrupt(interrupt::stat, mem_fns);
-				}
-
-				render_scanline();
-			}
-			break;
-		case mode_t::hblank: // mode 0
-			if (mode_clock >= 204) {
-				mode_clock = 0;
-				ly++;
-				if (ly == 144) {
-					lcd_status.v.mode = mode_t::vblank;
-					swap_buffers();
-
-					request_interrupt(interrupt::vblank, mem_fns);
-
-					if(lcd_status.v.mode_vblank) {
-						request_interrupt(interrupt::stat, mem_fns);
-					}
-				}
-				else {
-					lcd_status.v.mode = mode_t::oam;
-
-					if(lcd_status.v.mode_oam) {
-						request_interrupt(interrupt::stat, mem_fns);
-					}
-				}
-			}
-			break;
-		case mode_t::vblank: // mode 1
-			if (mode_clock >= 456) {
-				mode_clock = 0;
-				ly++;
-				if (ly > 153) {
-					ly = 0;
-					lcd_status.v.mode = mode_t::oam;
-
-					if(ly < 144 && lcd_status.v.mode_oam) {
-						request_interrupt(interrupt::stat, mem_fns);
-					}
-				}
-			}
-			break;
-		default: std::unreachable();
-		}
+		(this->*mode_ptr)();
 
 		const bool prev_coincidence = lcd_status.v.coincidence;
 		lcd_status.v.coincidence = lyc == ly;

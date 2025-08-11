@@ -52,6 +52,7 @@ namespace yahbog {
 			lyc = 0;
 			dma_source = 0;
 			dma_offset = std::numeric_limits<std::uint8_t>::max();
+			mode_ptr = &gpu::hblank_tick;
 		}
 
 		consteval static auto serializable_members() {
@@ -100,6 +101,14 @@ namespace yahbog {
 		}
 
 	private:
+
+		constexpr void oam_tick() noexcept;
+		constexpr void vram_tick() noexcept;
+		constexpr void hblank_tick() noexcept;
+		constexpr void vblank_tick() noexcept;
+
+		using mode_ptr_t = void (gpu::*)() noexcept;
+		mode_ptr_t mode_ptr;
 
 		constexpr void write_lcdc(std::uint16_t addr, std::uint8_t value) noexcept {
 			auto old_enable = lcdc.v.lcd_display;
