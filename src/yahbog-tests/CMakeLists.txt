@@ -18,8 +18,11 @@ FetchContent_Declare(zip URL https://github.com/kuba--/zip/archive/refs/tags/v0.
 FetchContent_MakeAvailable(zip)
 
 # termcolor
-FetchContent_Declare(termcolor URL https://github.com/ikalnytskyi/termcolor/archive/refs/tags/v2.1.0.zip)
+FetchContent_Declare(termcolor URL https://github.com/ikalnytskyi/termcolor/archive/refs/tags/v2.1.0.zip SOURCE_SUBDIR dummy)
 FetchContent_MakeAvailable(termcolor)
+
+add_library(termcolor INTERFACE)
+target_include_directories(termcolor INTERFACE ${termcolor_SOURCE_DIR}/include)
 
 # readerwriterqueue
 FetchContent_Declare(readerwriterqueue URL https://github.com/cameron314/readerwriterqueue/archive/refs/tags/v1.0.7.tar.gz)
@@ -41,7 +44,7 @@ target_link_libraries(
     yahbog-core
     zip
     nlohmann_json::nlohmann_json
-    termcolor::termcolor
+    termcolor
     readerwriterqueue
 )
 
