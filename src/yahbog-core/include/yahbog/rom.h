@@ -75,10 +75,6 @@ namespace yahbog {
 		constexpr virtual void write_banked(std::uint16_t addr, std::uint8_t value) noexcept = 0;
 		constexpr virtual void write_bank00(std::uint16_t addr, std::uint8_t value) noexcept = 0;
 
-		constexpr static auto ext_ram_disabled_value = (std::numeric_limits<std::uint16_t>::max)();
-
-		constexpr bool ext_ram_enabled() const { return ext_ram_bank_idx != ext_ram_disabled_value; }
-
 		constexpr static auto rom_bank_size = 0x4000; // 16KB
 		constexpr static auto ext_ram_bank_size = 0x2000; // 8KB
 
@@ -86,8 +82,12 @@ namespace yahbog {
 		std::vector<std::uint8_t> ext_ram;
 		rom_header_t header_;
 		std::uint16_t rom_bank_idx = 1;
-		std::uint16_t ext_ram_bank_idx = ext_ram_disabled_value;
+		std::uint16_t ext_ram_bank_idx = 0;
+		std::uint8_t ext_ram_enabled = 0;
 		crc32_t crc32_checksum;
+
+		std::uint16_t num_rom_banks = 0;
+		std::uint16_t num_ext_ram_banks = 0;
 
 		// Implementation-specific registers
 		std::array<std::uint8_t, 16> impl_regs;

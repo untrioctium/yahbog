@@ -1,4 +1,8 @@
-add_executable(yahbog-gui main.cpp)
+add_executable(yahbog-gui 
+    main.cpp
+    util/compute_shader.h
+    util/texture.h
+)
 
 # freetype
 FetchContent_Declare(
@@ -49,4 +53,5 @@ target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_FREETYPE)
 target_compile_definitions(imgui PUBLIC IMGUI_USE_WCHAR32)
 target_link_libraries(imgui PUBLIC freetype glfw glad)
 
-target_link_libraries(yahbog-gui PRIVATE imgui)
+target_precompile_headers(yahbog-gui REUSE_FROM yahbog-core)
+target_link_libraries(yahbog-gui PRIVATE imgui yahbog-core)

@@ -48,6 +48,10 @@ target_link_libraries(
     readerwriterqueue
 )
 
+if(ENABLE_XRAY)
+    enable_xray(yahbog-tests)
+endif()
+
 #if(UNIX)
 #    target_compile_options(yahbog-tests PRIVATE -O3 -march=native)
 #endif()

@@ -35,6 +35,8 @@ namespace yahbog {
 				lcd_status.v.mode = mode_t::vblank;
 				mode_ptr = &gpu::vblank_tick;
 				swap_buffers();
+				auto& current_draw_buffer = m_framebuffers[next_buffer_idx()];
+				std::fill(current_draw_buffer.begin(), current_draw_buffer.end(), 0);
 
 				request_interrupt(interrupt::vblank, mem_fns);
 

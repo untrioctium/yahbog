@@ -111,9 +111,10 @@ bool run_gbmicrotest() {
 		zip_entry_openbyindex(archive, i);
 		std::string_view name = zip_entry_name(archive);
 		if(name.ends_with(".gb")) {
-			// trim the first directory
+			// trim the first two directories
 			auto first_slash = name.find_first_of('/');
-			auto trimmed_name = name.substr(first_slash + 1);
+			auto second_slash = name.find_first_of('/', first_slash + 1);
+			auto trimmed_name = name.substr(second_slash + 1);
 			test_files.push_back(gbmicrotest_test{std::string(trimmed_name), std::vector<std::uint8_t>(zip_entry_size(archive))});
 			promises.push_back(std::promise<test_suite::emulator_result>());
 			futures.push_back(promises.back().get_future());

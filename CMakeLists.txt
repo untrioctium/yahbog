@@ -6,7 +6,8 @@ project(yahbog)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if (CMAKE_BUILD_TYPE STREQUAL "Release")
+if (CMAKE_BUILD_TYPE MATCHES "Rel.*")
+    message(STATUS "Building in release mode")
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
 endif()
 
@@ -35,6 +36,25 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(zlib)
 add_library(ZLIB::ZLIB ALIAS zlib)
 set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" "${zlib_BINARY_DIR}")
+
+option(ENABLE_XRAY "Enable LLVM XRay instrumentation" OFF)
+
+function(enable_xray target)
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang.*")
+    message(STATUS "Enabling XRay instrumentation for ${target}")
+    # Instrument and lower the threshold so even small funcs get sleds.
+    target_compile_options(${target} PRIVATE
+      -fxray-instrument
+      -fxray-instruction-threshold=1
+      -gdwarf-5
+      -ginline-line-tables
+      -fdebug-info-for-profiling
+      -fno-omit-frame-pointer
+    )
+    # Ensure link goes through clang so the runtime is pulled in automatically.
+    target_link_options(${target} PRIVATE -fxray-instrument)
+  endif()
+endfunction()
 
 #set(CMAKE_CXX_CLANG_TIDY "clang-tidy-19")
 add_subdirectory(src/yahbog-core)

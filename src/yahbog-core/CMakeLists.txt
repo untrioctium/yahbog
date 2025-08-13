@@ -38,6 +38,10 @@ if(WIN32)
     target_compile_definitions(yahbog-core PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX)
 endif()
 
+if(ENABLE_XRAY)
+    enable_xray(yahbog-core)
+endif()
+
 target_include_directories(
     yahbog-core PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

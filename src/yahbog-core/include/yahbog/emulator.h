@@ -11,6 +11,7 @@
 #include <yahbog/rom.h>
 #include <yahbog/io.h>
 #include <yahbog/timer.h>
+#include <yahbog/apu.h>
 
 namespace yahbog {
 
@@ -20,6 +21,7 @@ namespace yahbog {
 			return std::array{
 				address_range_t<wram_t>{0xC000, 0xCFFF, &wram_t::read_bank00, &wram_t::write_bank00},
 				address_range_t<wram_t>{0xD000, 0xDFFF, &wram_t::read_banked, &wram_t::write_banked},
+				address_range_t<wram_t>{0xE000, 0xFDFF, &wram_t::read_echo, &wram_t::write_echo},
 				address_range_t<wram_t>{0xFF80, 0xFFFE, &wram_t::read_hram, &wram_t::write_hram},
 				address_range_t<wram_t>{0xFF70, &wram_t::read_bank_idx, &wram_t::write_bank_idx}
 			};
@@ -75,6 +77,30 @@ namespace yahbog {
 			wram[addr - 0xD000 + ram_bank_idx * bank_size] = value;
 		}
 
+		constexpr uint8_t read_echo(uint16_t addr) {
+			ASSUME_IN_RANGE(addr, 0xE000, 0xFDFF);
+
+			const std::uint16_t effective_addr = static_cast<std::uint16_t>(addr - 0x2000);
+			if (effective_addr < 0xD000) {
+				return wram[effective_addr - 0xC000];
+			} else {
+				ASSUME_IN_RANGE(ram_bank_idx, 1, 7);
+				return wram[effective_addr - 0xD000 + ram_bank_idx * bank_size];
+			}
+		}
+
+		constexpr void write_echo(uint16_t addr, uint8_t value) {
+			ASSUME_IN_RANGE(addr, 0xE000, 0xFDFF);
+
+			const std::uint16_t effective_addr = static_cast<std::uint16_t>(addr - 0x2000);
+			if (effective_addr < 0xD000) {
+				wram[effective_addr - 0xC000] = value;
+			} else {
+				ASSUME_IN_RANGE(ram_bank_idx, 1, 7);
+				wram[effective_addr - 0xD000 + ram_bank_idx * bank_size] = value;
+			}
+		}
+
 		constexpr uint8_t read_hram(uint16_t addr) { 
 			ASSUME_IN_RANGE(addr, 0xFF80, 0xFFFE);
 
@@ -126,10 +152,11 @@ namespace yahbog {
 		cpu z80;
 		gpu ppu;
 		timer_t timer;
-		io_t io;		
+		io_t io;
+		apu_t apu;
 
 		constexpr static std::size_t address_space_size = std::numeric_limits<std::uint16_t>::max() + 1;
-		memory_dispatcher<address_space_size, gpu, wram_t, rom_t, timer_t, cpu, io_t> mmu;
+		memory_dispatcher<address_space_size, gpu, wram_t, rom_t, timer_t, cpu, io_t, apu_t> mmu;
 
 		constexpr emulator(hardware_mode mode) : 
 			mem_fns{default_reader(), default_writer(), bus_state::normal},
@@ -143,6 +170,7 @@ namespace yahbog {
 				mmu.set_handler(&timer);
 				mmu.set_handler(&z80);
 				mmu.set_handler(&io);
+				mmu.set_handler(&apu);
 			}
 
 		constexpr emulator(const emulator& other) = delete;
@@ -185,7 +213,7 @@ namespace yahbog {
 
 		constexpr read_fn_t blocked_reader() noexcept {
 			return [this](std::uint16_t addr) noexcept -> std::uint8_t { 
-				if(addr < 0xFF00) {
+				if(addr >= 0xFE00 && addr <= 0xFE9F) [[unlikely]] {
 					return 0xFF;
 				} else {
 					return mmu.read(addr);
@@ -194,7 +222,7 @@ namespace yahbog {
 		}
 		constexpr write_fn_t blocked_writer() noexcept {
 			return [this](std::uint16_t addr, std::uint8_t value) noexcept -> void { 
-				if(addr < 0xFF00) {
+				if(addr >= 0xFE00 && addr <= 0xFE9F) [[unlikely]] {
 					return;
 				} else {
 					mmu.write(addr, value);

@@ -38,3 +38,8 @@ testdata/
 *.log
 imgui.ini
 callgrind.out.*
+roms/
+*.callgrind
+*.prof
+trace.*
+xray*

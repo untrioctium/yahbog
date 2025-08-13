@@ -47,6 +47,9 @@ namespace yahbog {
 		mbc->ext_ram_bank_idx = (std::numeric_limits<decltype(mbc->ext_ram_bank_idx)>::max)();
 		mbc->crc32_checksum = crc32({mbc->rom_data.data(), mbc->rom_data.size()});
 
+		mbc->num_rom_banks = static_cast<std::uint16_t>(mbc->rom_data.size() / rom_bank_size);
+		mbc->num_ext_ram_banks = static_cast<std::uint16_t>(mbc->ext_ram.size() / ext_ram_bank_size);
+
 		return mbc;
 	}
 
@@ -69,7 +72,7 @@ namespace yahbog {
 		}
 
 		constexpr std::uint8_t read_ext_ram(std::uint16_t addr) noexcept override {
-			if(!ext_ram_enabled()) {
+			if(!ext_ram_enabled) {
 				return 0xFF;
 			}
 
@@ -77,7 +80,7 @@ namespace yahbog {
 		}
 
 		constexpr void write_ext_ram(std::uint16_t addr, std::uint8_t value) noexcept override {
-			if(!ext_ram_enabled()) {
+			if(!ext_ram_enabled) {
 				return;
 			}
 
@@ -85,17 +88,11 @@ namespace yahbog {
 		}
 
 		constexpr void write_banked(std::uint16_t addr, std::uint8_t value) noexcept override {
-			if(value == 0x0A) {
-				ext_ram_bank_idx = 0;
-			}
-			else ext_ram_bank_idx = ext_ram_disabled_value;
+			ext_ram_enabled = value == 0x0A;
 		}
 
 		constexpr void write_bank00(std::uint16_t addr, std::uint8_t value) noexcept override {
-			if(value == 0x0A) {
-				ext_ram_bank_idx = 0;
-			}
-			else ext_ram_bank_idx = ext_ram_disabled_value;
+			ext_ram_enabled = value == 0x0A;
 		}
 	};
 
@@ -119,40 +116,34 @@ namespace yahbog {
 		// [2] = Banking mode (0 = ROM banking, 1 = RAM banking)
 		// [3] = Cached bank index for 0x0000-0x3FFF region (bank00 index)
 
-		constexpr std::uint16_t num_rom_banks() const noexcept {
-			return static_cast<std::uint16_t>(rom_data.size() / rom_bank_size);
-		}
-
 		constexpr void recompute_cached_banks() noexcept {
-			const auto banks = num_rom_banks();
 			// Compute banked area bank index (0x4000-0x7FFF)
 			std::uint16_t banked = static_cast<std::uint16_t>(((impl_regs[1] & 0x03) << 5) | (impl_regs[0] & 0x1F));
 			if((banked & 0x1F) == 0) {
 				banked |= 0x01; // avoid forbidden banks
 			}
-			rom_bank_idx = banks ? static_cast<std::uint16_t>(banked % banks) : 1;
+			rom_bank_idx = num_rom_banks ? static_cast<std::uint16_t>(banked % num_rom_banks) : 1;
 
 			// Compute bank00 index (0x0000-0x3FFF)
 			std::uint16_t bank00 = ((impl_regs[2] & 0x01) == 0)
 				? 0
 				: static_cast<std::uint16_t>((impl_regs[1] & 0x03) << 5);
-			std::uint16_t bank00_mod = banks ? static_cast<std::uint16_t>(bank00 % banks) : 0;
+			std::uint16_t bank00_mod = num_rom_banks ? static_cast<std::uint16_t>(bank00 % num_rom_banks) : 0;
 			impl_regs[3] = static_cast<std::uint8_t>(bank00_mod);
 		}
 
 		constexpr void update_ext_ram_bank_after_change() noexcept {
-			if(!ext_ram_enabled()) {
+			if(!ext_ram_enabled) {
 				return;
 			}
-			const std::uint16_t ram_banks = static_cast<std::uint16_t>(ext_ram.size() / ext_ram_bank_size);
 			if((impl_regs[2] & 0x01) == 0) {
 				// ROM banking mode -> RAM bank 0 selected
 				ext_ram_bank_idx = 0;
 			} else {
 				// RAM banking mode -> select by upper bits register (0-3)
 				std::uint16_t bank = static_cast<std::uint16_t>(impl_regs[1] & 0x03);
-				if(ram_banks != 0) {
-					ext_ram_bank_idx = static_cast<std::uint16_t>(bank % ram_banks);
+				if(num_ext_ram_banks != 0) {
+					ext_ram_bank_idx = static_cast<std::uint16_t>(bank % num_ext_ram_banks);
 				} else {
 					ext_ram_bank_idx = 0;
 				}
@@ -169,14 +160,14 @@ namespace yahbog {
 		}
 
 		constexpr std::uint8_t read_ext_ram(std::uint16_t addr) noexcept override {
-			if(!ext_ram_enabled()) {
+			if(!ext_ram_enabled) {
 				return 0xFF;
 			}
 			return ext_ram[(addr - 0xA000) + ext_ram_bank_idx * ext_ram_bank_size];
 		}
 
 		constexpr void write_ext_ram(std::uint16_t addr, std::uint8_t value) noexcept override {
-			if(!ext_ram_enabled()) {
+			if(!ext_ram_enabled) {
 				return;
 			}
 			ext_ram[(addr - 0xA000) + ext_ram_bank_idx * ext_ram_bank_size] = value;
@@ -203,16 +194,16 @@ namespace yahbog {
 				// RAM enable (lower 4 bits must be 0x0A)
 				if(((value & 0x0F) == 0x0A) && !ext_ram.empty()) {
 					// Enable and select proper RAM bank
+					ext_ram_enabled = 1;
 					if((impl_regs[2] & 0x01) == 0) {
 						ext_ram_bank_idx = 0;
 					} else {
-						const std::uint16_t ram_banks = static_cast<std::uint16_t>(ext_ram.size() / ext_ram_bank_size);
 						std::uint16_t bank = static_cast<std::uint16_t>(impl_regs[1] & 0x03);
-						ext_ram_bank_idx = ram_banks ? static_cast<std::uint16_t>(bank % ram_banks) : 0;
+						ext_ram_bank_idx = num_ext_ram_banks ? static_cast<std::uint16_t>(bank % num_ext_ram_banks) : 0;
 					}
 				} else {
 					// Disable RAM
-					ext_ram_bank_idx = ext_ram_disabled_value;
+					ext_ram_enabled = 0;
 				}
 			}
 			else {
@@ -232,7 +223,7 @@ namespace yahbog {
 			ext_ram.resize(512);
 			for(auto &reg : impl_regs) reg = 0;
 			rom_bank_idx = 1;
-			ext_ram_bank_idx = ext_ram_disabled_value;
+			ext_ram_bank_idx = 0;
 		}
 
 		constexpr ~mbc2_rom_t() = default;
@@ -243,9 +234,6 @@ namespace yahbog {
 		}
 
 	private:
-		constexpr std::uint16_t num_rom_banks() const noexcept {
-			return static_cast<std::uint16_t>(rom_data.size() / rom_bank_size);
-		}
 
 		constexpr std::uint8_t read_bank00(std::uint16_t addr) noexcept override {
 			// Fixed to bank 0
@@ -257,7 +245,7 @@ namespace yahbog {
 		}
 
 		constexpr std::uint8_t read_ext_ram(std::uint16_t addr) noexcept override {
-			if(!ext_ram_enabled()) {
+			if(!ext_ram_enabled) {
 				return 0xFF;
 			}
 			const std::size_t offset = static_cast<std::size_t>(addr & 0x01FF);
@@ -265,7 +253,7 @@ namespace yahbog {
 		}
 
 		constexpr void write_ext_ram(std::uint16_t addr, std::uint8_t value) noexcept override {
-			if(!ext_ram_enabled()) {
+			if(!ext_ram_enabled) {
 				return;
 			}
 			const std::size_t offset = static_cast<std::size_t>(addr & 0x01FF);
@@ -280,20 +268,106 @@ namespace yahbog {
 			constexpr auto control_bit = 0b1'0000'0000;
 
 			if(addr & control_bit) {
-				// ROM bank select (low 4 bits)
-				rom_bank_idx = static_cast<std::uint16_t>(value & 0x0F);
-				if(rom_bank_idx == 0) {
+				auto bank_select = value & 0x0F;
+				if(bank_select == 0) {
 					rom_bank_idx = 1;
+				} else {
+					rom_bank_idx = static_cast<std::uint16_t>(bank_select % num_rom_banks);
 				}
 			}
 			else {
-				// RAM enable/disable
-				if(value == 0x0A) {
-					ext_ram_bank_idx = 0;
+				ext_ram_enabled = (value & 0b1111) == 0x0A;
+			}
+		}
+	};
+
+	class mbc5_rom_t : public rom_t {
+	public:
+		constexpr mbc5_rom_t() {
+			for(auto &reg : impl_regs) reg = 0;
+			rom_bank_idx = 1;
+			ext_ram_bank_idx = 0;
+		}
+
+		constexpr ~mbc5_rom_t() = default;
+
+		constexpr bool has_battery_backed_ram() const noexcept override {
+			// 0x1B: MBC5+RAM+BATTERY, 0x1E: MBC5+RUMBLE+RAM+BATTERY
+			return header_.type == 0x1B || header_.type == 0x1E;
+		}
+
+	private:
+		// impl_regs layout for MBC5
+		// [0] = ROM bank low 8 bits (bits 0-7)
+		// [1] = ROM bank high bit (bit 8)
+		// [2] = RAM bank number (0-15)
+
+		constexpr void recompute_rom_bank() noexcept {
+			std::uint16_t bank = static_cast<std::uint16_t>(((impl_regs[1] & 0x01) << 8) | impl_regs[0]);
+			rom_bank_idx = num_rom_banks ? static_cast<std::uint16_t>(bank % num_rom_banks) : 1;
+		}
+
+		constexpr void update_ext_ram_bank() noexcept {
+			std::uint16_t bank = static_cast<std::uint16_t>(impl_regs[2] & 0x0F);
+			if(num_ext_ram_banks != 0) {
+				ext_ram_bank_idx = static_cast<std::uint16_t>(bank % num_ext_ram_banks);
+			} else {
+				ext_ram_bank_idx = 0;
+			}
+		}
+
+		constexpr std::uint8_t read_bank00(std::uint16_t addr) noexcept override {
+			// Fixed to bank 0 for 0x0000-0x3FFF
+			return rom_data[addr];
+		}
+
+		constexpr std::uint8_t read_banked(std::uint16_t addr) noexcept override {
+			return rom_data[(addr - 0x4000) + rom_bank_idx * rom_bank_size];
+		}
+
+		constexpr std::uint8_t read_ext_ram(std::uint16_t addr) noexcept override {
+			if(!ext_ram_enabled) {
+				return 0xFF;
+			}
+			return ext_ram[(addr - 0xA000) + ext_ram_bank_idx * ext_ram_bank_size];
+		}
+
+		constexpr void write_ext_ram(std::uint16_t addr, std::uint8_t value) noexcept override {
+			if(!ext_ram_enabled) {
+				return;
+			}
+			ext_ram[(addr - 0xA000) + ext_ram_bank_idx * ext_ram_bank_size] = value;
+		}
+
+		constexpr void write_banked(std::uint16_t addr, std::uint8_t value) noexcept override {
+			if(addr <= 0x5FFF) {
+				// 0x4000-0x5FFF: RAM bank number (0-15). On rumble carts, bit 3 may control rumble; mask to 0x0F.
+				impl_regs[2] = static_cast<std::uint8_t>(value & 0x0F);
+				update_ext_ram_bank();
+			} else {
+				// 0x6000-0x7FFF: Not used by MBC5; ignore writes
+			}
+		}
+
+		constexpr void write_bank00(std::uint16_t addr, std::uint8_t value) noexcept override {
+			if(addr <= 0x1FFF) {
+				// 0x0000-0x1FFF: RAM enable (lower 4 bits must be 0x0A)
+				if(((value & 0x0F) == 0x0A) && !ext_ram.empty()) {
+					ext_ram_enabled = 1;
+					update_ext_ram_bank();
+				} else {
+					ext_ram_enabled = 0;
 				}
-				else {
-					ext_ram_bank_idx = ext_ram_disabled_value;
-				}
+			}
+			else if(addr <= 0x2FFF) {
+				// 0x2000-0x2FFF: ROM bank low 8 bits
+				impl_regs[0] = value;
+				recompute_rom_bank();
+			}
+			else {
+				// 0x3000-0x3FFF: ROM bank high bit (bit 8)
+				impl_regs[1] = static_cast<std::uint8_t>(value & 0x01);
+				recompute_rom_bank();
 			}
 		}
 	};
@@ -308,6 +382,13 @@ namespace yahbog {
 			case 0x05: // MBC2
 			case 0x06: // MBC2+BATTERY
 				return std::make_unique<mbc2_rom_t>();
+			case 0x19: // MBC5
+			case 0x1A: // MBC5+RAM
+			case 0x1B: // MBC5+RAM+BATTERY
+			case 0x1C: // MBC5+RUMBLE
+			case 0x1D: // MBC5+RUMBLE+RAM
+			case 0x1E: // MBC5+RUMBLE+RAM+BATTERY
+				return std::make_unique<mbc5_rom_t>();
 			default: return nullptr;
 		}
 	}

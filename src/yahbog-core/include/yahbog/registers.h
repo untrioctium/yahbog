@@ -75,7 +75,6 @@ namespace yahbog {
 		requires (sizeof(Underlying) == 1) &&
 		std::has_unique_object_representations_v<Underlying> &&
 		requires (Underlying) {
-			{ Underlying::read_mask } -> std::convertible_to<std::uint8_t>;
 			{ Underlying::write_mask } -> std::convertible_to<std::uint8_t>;
 		}
 	struct io_register {
@@ -84,7 +83,7 @@ namespace yahbog {
 		constexpr std::uint8_t as_byte() const noexcept { return std::bit_cast<std::uint8_t>(v); }
 		constexpr void set_byte(std::uint8_t val) noexcept { v = std::bit_cast<Underlying>(val); }
 		
-		constexpr std::uint8_t read() const noexcept { return (as_byte() & Underlying::read_mask); }
+		constexpr std::uint8_t read() const noexcept { return (as_byte()); }
 		constexpr void write(std::uint8_t val) noexcept { v = std::bit_cast<Underlying>(static_cast<std::uint8_t>(val & Underlying::write_mask)); }
 	};
 }

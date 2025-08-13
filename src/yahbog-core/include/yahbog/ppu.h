@@ -6,6 +6,46 @@
 #include <yahbog/utility/serialization.h>
 
 namespace yahbog {
+
+	template<typename T, std::size_t N>
+	class fifo {
+	public:
+
+		constexpr void push(T value) noexcept {
+			data[tail++] = value;
+			if(tail == N) tail = 0;
+		}
+
+		constexpr T pop() noexcept {
+			if(head == tail) return T{};
+			const auto value = data[head++];
+			if(head == N) head = 0;
+			return value;
+		}
+
+		constexpr T peek() const noexcept {
+			if(head == tail) return T{};
+			return data[head];
+		}
+
+		constexpr bool empty() const noexcept { return head == tail; }
+		constexpr bool full() const noexcept { return (tail + 1) % N == head; }
+
+		constexpr std::size_t size() const noexcept {
+			if(tail >= head) return tail - head;
+			return N - (head - tail);
+		}
+
+		constexpr std::size_t capacity() const noexcept { return N; }
+		
+	private:
+		std::array<T, N> data;
+		std::size_t head = 0; // location of the next element to be read
+		std::size_t tail = 0; // location of the next element to be written
+	};
+
+	using bg_fifo_t = fifo<std::uint8_t, 16>;
+
 	class gpu : public serializable<gpu> {
 	public:
 
@@ -17,7 +57,7 @@ namespace yahbog {
 		constexpr void tick() noexcept;
 		
 		constexpr const auto& framebuffer() const noexcept { return m_framebuffers[display_buffer_idx()]; }
-		constexpr bool framebuffer_ready() const noexcept { return lcd_status.v.mode == mode_t::vblank; }
+		constexpr bool framebuffer_ready() const noexcept { return lcd_status.v.mode == mode_t::vblank && ly == 144; }
 
 		consteval static auto address_range() {
 			return std::array{
@@ -44,6 +84,7 @@ namespace yahbog {
 			bgp.set_byte(0xFC);
 			obp0.set_byte(0xFF);
 			obp1.set_byte(0xFF);
+			dma = 0xFF;
 			scx = 0;
 			scy = 0;
 			wx = 0;
@@ -85,6 +126,8 @@ namespace yahbog {
 		constexpr static std::size_t bpp = 2;
 		constexpr static std::size_t screen_width = 160;
 		constexpr static std::size_t screen_height = 144;
+		constexpr static std::size_t framebuffer_size = screen_width * screen_height / (8 / bpp);
+		using framebuffer_t = std::array<std::uint8_t, framebuffer_size>;
 
 		constexpr std::uint8_t get_pixel(std::size_t x, std::size_t y) const noexcept {
 			ASSUME_IN_RANGE(x, 0, screen_width - 1);
@@ -224,16 +267,12 @@ namespace yahbog {
 			
 			auto& buffer = m_framebuffers[next_buffer_idx()];
 			auto& current_color = buffer[n_bytes];
-			current_color &= ~(0b11 << bit_offset);
 			current_color |= ((color & 0b11) << bit_offset);
 		}
 
 		constexpr void render_scanline() noexcept;
 
 		std::uint16_t mode_clock = 0;
-
-		constexpr static auto framebuffer_size = screen_width * screen_height / (8 / bpp);
-		using framebuffer_t = std::array<std::uint8_t, framebuffer_size>;
 
 		std::array<framebuffer_t, 2> m_framebuffers{};
 		std::uint8_t m_framebuffer_idx = 0; // index of the framebuffer to display

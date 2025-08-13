@@ -27,7 +27,9 @@ namespace yahbog {
 	public:
 		consteval static auto address_range() {
 			return std::array{ 
-				address_range_t<io_t>{0xFF00, &io_t::read_joypad, &mem_helpers::write_io_register<&io_t::joypad>}
+				address_range_t<io_t>{0xFF00, &io_t::read_joypad, &mem_helpers::write_io_register<&io_t::joypad>},
+				mem_helpers::make_member_accessor<0xFF01, &io_t::serial_data>(),
+				mem_helpers::make_member_accessor<0xFF02, &io_t::sc>()
 			};
 		}
 
@@ -48,6 +50,7 @@ namespace yahbog {
 
 		constexpr void reset() noexcept {
 			joypad.set_byte(0xCF);
+			sc.set_byte(0x7E);
 		}
 
 	private:
@@ -63,7 +66,7 @@ namespace yahbog {
 				result &= joypad_status >> 4;
 			}
 
-			return result;
+			return result | 0b11000000;;
 		}
 
 		struct joypad_t {
@@ -83,6 +86,20 @@ namespace yahbog {
 
 		io_register<joypad_t> joypad;
 		std::uint8_t joypad_status = 0b11111111;
+
+		std::uint8_t serial_data = 0x00;
+
+		struct sc_t {
+			constexpr static std::uint8_t read_mask = 0b10000011;
+			constexpr static std::uint8_t write_mask = 0b10000011;
+
+			std::uint8_t clock_select : 1;
+			std::uint8_t clock_speed : 1;
+			std::uint8_t _unused : 5;
+			std::uint8_t transfer_enable : 1;
+		};
+
+		io_register<sc_t> sc;
 
 
 	};

@@ -31,6 +31,7 @@ public:
 		// Power-on state observed on DMG/MGB
 		internal_counter = (0xABu << 8) | 0xD0u; //   DIV=AB  sub-div(/4)=0x34
 		div = static_cast<std::uint8_t>(internal_counter >> 8);
+		tac.set_byte(0xF8);
 	}
 
 	// Called once per T-cycle (4 MHz) by the scheduler
