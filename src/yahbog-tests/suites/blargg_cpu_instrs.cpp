@@ -272,7 +272,7 @@ static bool run_test(const std::filesystem::path& rom_path, yahbog::hardware_mod
 	std::jthread dt(decompress_thread, std::move(state));
 	DEFER(execution_done.request_stop());
 
-	auto emu = std::make_unique<yahbog::emulator>(mode);
+	auto emu = std::make_unique<yahbog::dmg_emulator>();
 	emu->hook_writing([](uint16_t addr, uint8_t value) {
 		// ignore audio registers
 		if(addr >= 0xFF10 && addr <= 0xFF3F) {
@@ -286,7 +286,7 @@ static bool run_test(const std::filesystem::path& rom_path, yahbog::hardware_mod
 		return false;
 	});
 
-	emu->hook_reading([](uint16_t addr) -> yahbog::emulator::reader_hook_response {
+	emu->hook_reading([](uint16_t addr) -> yahbog::dmg_emulator::reader_hook_response {
 		// pin LCDC.LY to 0x90 for Gameboy Doctor log consistency
 		if(addr == 0xFF44) {
 			return std::uint8_t{0x90};

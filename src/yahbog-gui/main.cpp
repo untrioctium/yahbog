@@ -69,7 +69,7 @@ struct rendering_context {
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
-	void run_convert(const yahbog::gpu::framebuffer_t& framebuffer) {
+	void run_convert(const yahbog::ppu_t::framebuffer_t& framebuffer) {
 		glBindTexture(GL_TEXTURE_2D, gameboy_image);
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 40, 144, GL_RED_INTEGER, GL_UNSIGNED_BYTE, framebuffer.data());

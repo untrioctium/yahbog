@@ -3,7 +3,6 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
-
 // Utility function implementations
 namespace test_output {
 	std::string repeat_unicode(const std::string& str, size_t count) {
@@ -130,8 +129,8 @@ namespace test_output {
 // Common test suite functionality
 namespace test_suite {
 	// Shared emulator setup with standard Game Boy initial state
-	std::unique_ptr<yahbog::emulator> create_emulator(yahbog::hardware_mode mode) {
-		auto emu = std::make_unique<yahbog::emulator>(mode);
+	std::unique_ptr<yahbog::dmg_emulator> create_emulator(yahbog::hardware_mode mode) {
+		auto emu = std::make_unique<yahbog::dmg_emulator>();
 		
 		// Standard Game Boy initial register state
 		auto regs = yahbog::registers{};
@@ -216,10 +215,11 @@ namespace test_suite {
 		return {false, "Timeout (>100M cycles)", cycle_count, duration};
 	}
 
-	void write_framebuffer_to_console(const yahbog::emulator& emulator) {
+	void write_framebuffer_to_console(const yahbog::dmg_emulator& emulator) {
 		const auto& framebuffer = emulator.ppu.framebuffer();
-		for(std::size_t y = 0; y < yahbog::gpu::screen_height; y++) {
-			for(std::size_t x = 0; x < yahbog::gpu::screen_width; x++) {
+		using ppu_t = yahbog::ppu_t<yahbog::hardware_mode::dmg>;
+		for(std::size_t y = 0; y < ppu_t::screen_height; y++) {
+			for(std::size_t x = 0; x < ppu_t::screen_width; x++) {
 				auto color = emulator.ppu.get_pixel(x, y);
 
 				constexpr static std::string_view char_map[4] = {" ", "░", "▓", "█"};
@@ -230,14 +230,16 @@ namespace test_suite {
 		}
 	}
 
-	void write_framebuffer_to_file(const yahbog::emulator& emulator, const std::filesystem::path& path) {
+	void write_framebuffer_to_file(const yahbog::dmg_emulator& emulator, const std::filesystem::path& path) {
 		const auto& framebuffer = emulator.ppu.framebuffer();
 
 		const auto real_path = std::filesystem::path(TEST_DATA_DIR) / "results" / path;
 
 		const auto size_multiplier = 8;
 
-		std::array<std::uint8_t, yahbog::gpu::screen_width * yahbog::gpu::screen_height * 3 * size_multiplier * size_multiplier> rgb_framebuffer;
+		using ppu_t = yahbog::ppu_t<yahbog::hardware_mode::dmg>;
+
+		std::array<std::uint8_t, ppu_t::screen_width * ppu_t::screen_height * 3 * size_multiplier * size_multiplier> rgb_framebuffer;
 
 		struct rgb_color {
 			std::uint8_t r, g, b;
@@ -250,15 +252,15 @@ namespace test_suite {
 			{0, 0, 0}, // 3
 		};
 
-		for(std::size_t y = 0; y < yahbog::gpu::screen_height; y++) {
-			for(std::size_t x = 0; x < yahbog::gpu::screen_width; x++) {
+		for(std::size_t y = 0; y < ppu_t::screen_height; y++) {
+			for(std::size_t x = 0; x < ppu_t::screen_width; x++) {
 				const auto color = emulator.ppu.get_pixel(x, y);
 				const auto& rgb = color_map[color];
 				for(std::size_t i = 0; i < size_multiplier; i++) {
 					for(std::size_t j = 0; j < size_multiplier; j++) {
-						rgb_framebuffer[(y * size_multiplier + i) * yahbog::gpu::screen_width * 3 * size_multiplier + (x * size_multiplier + j) * 3 + 0] = rgb.r;
-						rgb_framebuffer[(y * size_multiplier + i) * yahbog::gpu::screen_width * 3 * size_multiplier + (x * size_multiplier + j) * 3 + 1] = rgb.g;
-						rgb_framebuffer[(y * size_multiplier + i) * yahbog::gpu::screen_width * 3 * size_multiplier + (x * size_multiplier + j) * 3 + 2] = rgb.b;
+						rgb_framebuffer[(y * size_multiplier + i) * ppu_t::screen_width * 3 * size_multiplier + (x * size_multiplier + j) * 3 + 0] = rgb.r;
+						rgb_framebuffer[(y * size_multiplier + i) * ppu_t::screen_width * 3 * size_multiplier + (x * size_multiplier + j) * 3 + 1] = rgb.g;
+						rgb_framebuffer[(y * size_multiplier + i) * ppu_t::screen_width * 3 * size_multiplier + (x * size_multiplier + j) * 3 + 2] = rgb.b;
 					}
 				}
 			}
@@ -266,7 +268,7 @@ namespace test_suite {
 
 		std::filesystem::create_directories(real_path.parent_path());
 
-		stbi_write_png(real_path.string().c_str(), yahbog::gpu::screen_width * size_multiplier, yahbog::gpu::screen_height * size_multiplier, 3, rgb_framebuffer.data(), yahbog::gpu::screen_width * 3 * size_multiplier);
+		stbi_write_png(real_path.string().c_str(), ppu_t::screen_width * size_multiplier, ppu_t::screen_height * size_multiplier, 3, rgb_framebuffer.data(), ppu_t::screen_width * 3 * size_multiplier);
 	}
 
 	test_suite_runner::test_suite_runner(const std::string& name) 

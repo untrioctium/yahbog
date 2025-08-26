@@ -23,7 +23,8 @@ namespace yahbog {
 		released = 1
 	};
 
-	class io_t : public serializable<io_t> {
+	template<hardware_mode Mode>
+	class io_t : public serializable<io_t<Mode>> {
 	public:
 		consteval static auto address_range() {
 			return std::array{ 
@@ -103,7 +104,5 @@ namespace yahbog {
 
 
 	};
-
-	constexpr static auto io_serialized_size = io_t{}.serialized_size();
 
 }

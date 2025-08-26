@@ -94,5 +94,3 @@ namespace yahbog {
 	};
 
 }
-
-#include <yahbog/impl/rom_impl.h>

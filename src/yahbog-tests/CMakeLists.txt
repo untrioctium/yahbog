@@ -39,6 +39,8 @@ target_include_directories(yahbog-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${st
 
 target_precompile_headers(yahbog-tests REUSE_FROM yahbog-core)
 
+target_link_options(yahbog-tests PRIVATE -Wl,-Map,output.map)
+
 target_link_libraries(
     yahbog-tests PRIVATE
     yahbog-core

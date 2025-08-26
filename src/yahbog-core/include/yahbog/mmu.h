@@ -10,69 +10,8 @@
 #include <stdexcept>
 
 #include <yahbog/registers.h>
-#include <yahbog/utility/constexpr_function.h>
-#include <yahbog/utility/traits.h>
-
+#include <yahbog/common.h>
 namespace yahbog {
-	
-	enum class hardware_mode {
-		dmg,
-		cgb
-	};
-
-	enum class bus_state : std::uint8_t {
-		normal,
-		dma_blocked
-	};
-
-	using read_fn_t = yahbog::constexpr_function<uint8_t(uint16_t)>;
-	using write_fn_t = yahbog::constexpr_function<void(uint16_t, uint8_t)>;
-
-	struct mem_fns_t {
-		read_fn_t read;
-		write_fn_t write;
-
-		bus_state state;
-	}; 
-
-	template<typename T>
-	struct address_range_t {
-		uint16_t start;
-		uint16_t end;
-
-		using read_fn_member_t = uint8_t (T::*)(uint16_t);
-		using write_fn_member_t = void (T::*)(uint16_t, uint8_t);
-
-		using read_fn_ext_t = uint8_t (*)(T*, uint16_t);
-		using write_fn_ext_t = void (*)(T*, uint16_t, uint8_t);
-
-		using read_fn_t = std::variant<read_fn_member_t, read_fn_ext_t>;
-		using write_fn_t = std::variant<write_fn_member_t, write_fn_ext_t>;
-
-		read_fn_t read_fn;
-		write_fn_t write_fn;
-
-		consteval address_range_t(uint16_t start, uint16_t end, read_fn_t read_fn, write_fn_t write_fn) : start(start), end(end), read_fn(read_fn), write_fn(write_fn) {}
-		consteval address_range_t(uint16_t addr, read_fn_t read_fn, write_fn_t write_fn) : address_range_t(addr, addr, read_fn, write_fn) {}
-	};
-
-	#define ASSUME_IN_RANGE(value, start, end) [[assume(value >= (start))]]; [[assume(value <= (end))]]
-
-	enum class interrupt : std::uint8_t {
-		vblank = 0x00,
-		stat = 0x01,
-		timer = 0x02,
-		serial = 0x03,
-		joypad = 0x04,
-	};
-
-	constexpr void request_interrupt(interrupt i, mem_fns_t* mem) noexcept {
-		mem->write(0xFF0F, mem->read(0xFF0F) | (1 << static_cast<std::uint8_t>(i)));
-	}
-
-	constexpr void clear_interrupt(interrupt i, mem_fns_t* mem) noexcept {
-		mem->write(0xFF0F, mem->read(0xFF0F) & ~(1 << static_cast<std::uint8_t>(i)));
-	}
 
 	namespace mem_helpers {
 		namespace detail {
@@ -92,33 +31,33 @@ namespace yahbog {
 
 		}
 
-		template<auto MemberPtr>
-		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && std::is_same_v<::yahbog::detail::traits::member_type_of<MemberPtr>, uint8_t>
-		constexpr uint8_t read_byte(::yahbog::detail::traits::class_type_of<MemberPtr>* obj, [[maybe_unused]] uint16_t addr) {
+		template<traits::member_pointer auto MemberPtr>
+		requires std::is_same_v<traits::member_type_of<decltype(MemberPtr)>, uint8_t>
+		constexpr uint8_t read_byte(traits::class_type_of<decltype(MemberPtr)>* obj, [[maybe_unused]] uint16_t addr) {
 			return obj->*MemberPtr;
 		}
 
-		template<auto MemberPtr>
-		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && std::is_same_v<::yahbog::detail::traits::member_type_of<MemberPtr>, uint8_t>
-		constexpr void write_byte(::yahbog::detail::traits::class_type_of<MemberPtr>* obj, [[maybe_unused]] uint16_t addr, uint8_t data) {
+		template<traits::member_pointer auto MemberPtr>
+		requires std::is_same_v<traits::member_type_of<decltype(MemberPtr)>, uint8_t>
+		constexpr void write_byte(traits::class_type_of<decltype(MemberPtr)>* obj, [[maybe_unused]] uint16_t addr, uint8_t data) {
 			obj->*MemberPtr = data;
 		}
 
-		template<auto MemberPtr>
-		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && detail::is_io_register<::yahbog::detail::traits::member_type_of<MemberPtr>>
-		constexpr std::uint8_t read_io_register(::yahbog::detail::traits::class_type_of<MemberPtr>* obj, [[maybe_unused]] uint16_t addr) {
+		template<traits::member_pointer auto MemberPtr>
+		requires detail::is_io_register<traits::member_type_of<decltype(MemberPtr)>>
+		constexpr std::uint8_t read_io_register(traits::class_type_of<decltype(MemberPtr)>* obj, [[maybe_unused]] uint16_t addr) {
 			return (obj->*MemberPtr).read();
 		}
 
-		template<auto MemberPtr>
-		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && detail::is_io_register<::yahbog::detail::traits::member_type_of<MemberPtr>>
-		constexpr void write_io_register(::yahbog::detail::traits::class_type_of<MemberPtr>* obj, [[maybe_unused]] uint16_t addr, uint8_t data) {
+		template<traits::member_pointer auto MemberPtr>
+		requires detail::is_io_register<traits::member_type_of<decltype(MemberPtr)>>
+		constexpr void write_io_register(traits::class_type_of<decltype(MemberPtr)>* obj, [[maybe_unused]] uint16_t addr, uint8_t data) {
 			(obj->*MemberPtr).write(data);
 		}
 
-		template<std::size_t Location, auto MemberPtr>
-		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && std::is_same_v<::yahbog::detail::traits::member_type_of<MemberPtr>, uint8_t>
-		consteval auto make_member_accessor() -> address_range_t<::yahbog::detail::traits::class_type_of<MemberPtr>> {
+		template<std::size_t Location, traits::member_pointer auto MemberPtr>
+		requires std::is_same_v<traits::member_type_of<decltype(MemberPtr)>, uint8_t>
+		consteval auto make_member_accessor() -> address_range_t<traits::class_type_of<decltype(MemberPtr)>> {
 			return {
 				Location,
 				Location,
@@ -127,9 +66,9 @@ namespace yahbog {
 			};
 		}
 
-		template<std::size_t Location, auto MemberPtr>
-		requires std::is_member_object_pointer_v<decltype(MemberPtr)> && detail::is_io_register<::yahbog::detail::traits::member_type_of<MemberPtr>>
-		consteval auto make_member_accessor() -> address_range_t<::yahbog::detail::traits::class_type_of<MemberPtr>> {
+		template<std::size_t Location, traits::member_pointer auto MemberPtr>
+		requires detail::is_io_register<traits::member_type_of<decltype(MemberPtr)>>
+		consteval auto make_member_accessor() -> address_range_t<traits::class_type_of<decltype(MemberPtr)>> {
 			return {
 				Location,
 				Location,

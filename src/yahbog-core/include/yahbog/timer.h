@@ -9,7 +9,8 @@
 
 namespace yahbog {
 
-class timer_t : public serializable<timer_t> {
+template<hardware_mode Mode>
+class timer_t : public serializable<timer_t<Mode>> {
 public:
 	/*
 	 * Memory-mapped IO address range for the Game Boy timers

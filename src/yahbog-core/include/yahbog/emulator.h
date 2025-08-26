@@ -15,7 +15,8 @@
 
 namespace yahbog {
 
-	class wram_t : public serializable<wram_t> {
+	template<hardware_mode Mode>
+	class wram_t : public serializable<wram_t<Mode>> {
 	public:
 		consteval static auto address_range() {
 			return std::array{
@@ -27,10 +28,11 @@ namespace yahbog {
 			};
 		}
 
-		std::vector<uint8_t> wram;
+		constexpr static auto wram_size = Mode == hardware_mode::dmg ? 0x2000 : 0x8000;
+
+		std::array<uint8_t, wram_size> wram;
 		std::array<uint8_t, 0x7F> hram{0};
 		std::uint8_t ram_bank_idx = 1;
-		const hardware_mode mode;
 
 		consteval static auto serializable_members() {
 			return std::tuple{
@@ -38,14 +40,6 @@ namespace yahbog {
 				&wram_t::hram,
 				&wram_t::ram_bank_idx
 			};
-		}
-
-		constexpr wram_t(hardware_mode mode) : mode(mode) {
-			if(mode == hardware_mode::dmg) {
-				wram.resize(0x2000);
-			} else {
-				wram.resize(0x8000);
-			}
 		}
 
 	private:
@@ -113,55 +107,41 @@ namespace yahbog {
 		}
 
 		constexpr uint8_t read_bank_idx([[maybe_unused]] uint16_t addr) { 
-			if(mode == hardware_mode::dmg) {
-				return 1;
+			if constexpr (Mode == hardware_mode::dmg) {
+				return 0xFF;
 			}
 			return ram_bank_idx; 
 		}
 		constexpr void write_bank_idx([[maybe_unused]] uint16_t addr, uint8_t value) { 
-			if(mode == hardware_mode::dmg) {
+			if constexpr (Mode == hardware_mode::dmg) {
 				return;
 			}
 			ram_bank_idx = std::clamp(value, std::uint8_t{1}, std::uint8_t{7}); 
 		}
 	};
 
-	class scheduler {
-	public:
-
-		using event_t = constexpr_function<void()>;
-
-		constexpr scheduler() noexcept = default;
-		constexpr scheduler(const scheduler& other) noexcept = delete;
-		constexpr scheduler(scheduler&& other) noexcept = delete;
-		constexpr scheduler& operator=(const scheduler& other) noexcept = delete;
-		constexpr scheduler& operator=(scheduler&& other) noexcept = delete;
-
-	private:
-		
-	};
-
+	template<hardware_mode Mode>
 	class emulator {
 	public:
 
 		mem_fns_t mem_fns;
 		mem_fns_t blocked_mem_fns;
 
-		wram_t wram;
+		wram_t<Mode> wram;
 		std::unique_ptr<rom_t> rom;
-		cpu z80;
-		gpu ppu;
-		timer_t timer;
-		io_t io;
-		apu_t apu;
+		cpu_t<Mode> z80;
+		ppu_t<Mode> ppu;
+		timer_t<Mode> timer;
+		io_t<Mode> io;
+		apu_t<Mode> apu;
 
 		constexpr static std::size_t address_space_size = std::numeric_limits<std::uint16_t>::max() + 1;
-		memory_dispatcher<address_space_size, gpu, wram_t, rom_t, timer_t, cpu, io_t, apu_t> mmu;
+		memory_dispatcher<address_space_size, ppu_t<Mode>, wram_t<Mode>, rom_t, timer_t<Mode>, cpu_t<Mode>, io_t<Mode>, apu_t<Mode>> mmu;
 
-		constexpr emulator(hardware_mode mode) : 
+		constexpr emulator() : 
 			mem_fns{default_reader(), default_writer(), bus_state::normal},
 			blocked_mem_fns{blocked_reader(), blocked_writer(), bus_state::dma_blocked},
-			wram(mode),
+			wram(),
 			ppu(&mem_fns),
 			timer(&mem_fns)
 			{
@@ -255,22 +235,22 @@ namespace yahbog {
 			auto hasher = sha1{};
 			
 			hasher.process_bytes("wram");
-			wram_t::add_version_signature(hasher);
+			wram_t<Mode>::add_version_signature(hasher);
 
 			hasher.process_bytes("rom");
 			rom_t::add_version_signature(hasher);
 
 			hasher.process_bytes("cpu");
-			cpu::add_version_signature(hasher);
+			cpu_t<Mode>::add_version_signature(hasher);
 
 			hasher.process_bytes("gpu");
-			gpu::add_version_signature(hasher);
+			ppu_t<Mode>::add_version_signature(hasher);
 
 			hasher.process_bytes("io");
-			io_t::add_version_signature(hasher);
+			io_t<Mode>::add_version_signature(hasher);
 
 			hasher.process_bytes("timer");
-			timer_t::add_version_signature(hasher);
+			timer_t<Mode>::add_version_signature(hasher);
 
 			return hasher.get_digest();
 		}();
@@ -346,6 +326,7 @@ namespace yahbog {
 
 	};
 
-	constexpr static auto emu_size = sizeof(emulator);
+	using dmg_emulator = emulator<hardware_mode::dmg>;
+	using cgb_emulator = emulator<hardware_mode::cgb>;
 
 }

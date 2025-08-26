@@ -10,7 +10,7 @@ int main(int argc, char** argv) {
 	auto overall_start = std::chrono::high_resolution_clock::now();
 	
 	auto all_passed = true;
-	int total_test_suites = 5;
+	int total_test_suites = 1;
 	int passed_suites = 0;
 
 	std::cout << termcolor::cyan << "   Running " << total_test_suites << " test suites..." << termcolor::reset << "\n\n";

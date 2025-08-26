@@ -46,10 +46,11 @@ namespace yahbog {
 
 	using bg_fifo_t = fifo<std::uint8_t, 16>;
 
-	class gpu : public serializable<gpu> {
+	template<hardware_mode Mode>
+	class ppu_t : public serializable<ppu_t<Mode>> {
 	public:
 
-		constexpr gpu(mem_fns_t* mem_fns) noexcept : mem_fns(mem_fns) {
+		constexpr ppu_t(mem_fns_t* mem_fns) noexcept : mem_fns(mem_fns) {
 			lcd_status.v.mode = mode_t::hblank;
 		}
 
@@ -61,20 +62,20 @@ namespace yahbog {
 
 		consteval static auto address_range() {
 			return std::array{
-				address_range_t<gpu>{ 0x8000, 0x9FFF, &gpu::read_vram, &gpu::write_vram },
-				address_range_t<gpu>{ 0xFE00, 0xFE9F, &gpu::read_oam, &gpu::write_oam<false> },
-				address_range_t<gpu>{ 0xFF40, &mem_helpers::read_io_register<&gpu::lcdc>, &gpu::write_lcdc /* special handling to reset ppu */ },
-				mem_helpers::make_member_accessor<0xFF41, &gpu::lcd_status>(),
-				mem_helpers::make_member_accessor<0xFF42, &gpu::scy>(),
-				mem_helpers::make_member_accessor<0xFF43, &gpu::scx>(),
-				address_range_t<gpu>{ 0xFF44, &mem_helpers::read_byte<&gpu::ly>, [](gpu*, std::uint16_t, std::uint8_t) { /* do nothing */ } },
-				mem_helpers::make_member_accessor<0xFF45, &gpu::lyc>(),
-				address_range_t<gpu>{ 0xFF46, &mem_helpers::read_byte<&gpu::dma>, &gpu::write_dma },
-				mem_helpers::make_member_accessor<0xFF47, &gpu::bgp>(),
-				mem_helpers::make_member_accessor<0xFF48, &gpu::obp0>(),
-				mem_helpers::make_member_accessor<0xFF49, &gpu::obp1>(),
-				mem_helpers::make_member_accessor<0xFF4A, &gpu::wy>(),
-				mem_helpers::make_member_accessor<0xFF4B, &gpu::wx>()
+				address_range_t<ppu_t>{ 0x8000, 0x9FFF, &ppu_t::read_vram, &ppu_t::write_vram },
+				address_range_t<ppu_t>{ 0xFE00, 0xFE9F, &ppu_t::read_oam, &ppu_t::write_oam<false> },
+				address_range_t<ppu_t>{ 0xFF40, &mem_helpers::read_io_register<&ppu_t::lcdc>, &ppu_t::write_lcdc /* special handling to reset ppu */ },
+				mem_helpers::make_member_accessor<0xFF41, &ppu_t::lcd_status>(),
+				mem_helpers::make_member_accessor<0xFF42, &ppu_t::scy>(),
+				mem_helpers::make_member_accessor<0xFF43, &ppu_t::scx>(),
+				address_range_t<ppu_t>{ 0xFF44, &mem_helpers::read_byte<&ppu_t::ly>, [](ppu_t*, std::uint16_t, std::uint8_t) { /* do nothing */ } },
+				mem_helpers::make_member_accessor<0xFF45, &ppu_t::lyc>(),
+				address_range_t<ppu_t>{ 0xFF46, &mem_helpers::read_byte<&ppu_t::dma>, &ppu_t::write_dma },
+				mem_helpers::make_member_accessor<0xFF47, &ppu_t::bgp>(),
+				mem_helpers::make_member_accessor<0xFF48, &ppu_t::obp0>(),
+				mem_helpers::make_member_accessor<0xFF49, &ppu_t::obp1>(),
+				mem_helpers::make_member_accessor<0xFF4A, &ppu_t::wy>(),
+				mem_helpers::make_member_accessor<0xFF4B, &ppu_t::wx>()
 			};
 		};
 
@@ -93,33 +94,33 @@ namespace yahbog {
 			lyc = 0;
 			dma_source = 0;
 			dma_offset = std::numeric_limits<std::uint8_t>::max();
-			mode_ptr = &gpu::hblank_tick;
+			mode_ptr = &ppu_t::hblank_tick;
 		}
 
 		consteval static auto serializable_members() {
 			return std::tuple{
-				&gpu::mode_clock,
-				&gpu::m_framebuffers,
-				&gpu::m_framebuffer_idx,
-				&gpu::tile_data,
-				&gpu::vram,
-				&gpu::oam,
-				&gpu::lcdc,
-				&gpu::lcd_status,
-				&gpu::scy,
-				&gpu::scx,
-				&gpu::ly,
-				&gpu::lyc,
-				&gpu::dma,
-				&gpu::dma_source,
-				&gpu::dma_offset,
-				&gpu::dma_countdown,
-				&gpu::queued_dma_pending,
-				&gpu::bgp,
-				&gpu::obp0,
-				&gpu::obp1,
-				&gpu::wy,
-				&gpu::wx
+				&ppu_t::mode_clock,
+				&ppu_t::m_framebuffers,
+				&ppu_t::m_framebuffer_idx,
+				&ppu_t::tile_data,
+				&ppu_t::vram,
+				&ppu_t::oam,
+				&ppu_t::lcdc,
+				&ppu_t::lcd_status,
+				&ppu_t::scy,
+				&ppu_t::scx,
+				&ppu_t::ly,
+				&ppu_t::lyc,
+				&ppu_t::dma,
+				&ppu_t::dma_source,
+				&ppu_t::dma_offset,
+				&ppu_t::dma_countdown,
+				&ppu_t::queued_dma_pending,
+				&ppu_t::bgp,
+				&ppu_t::obp0,
+				&ppu_t::obp1,
+				&ppu_t::wy,
+				&ppu_t::wx
 			};
 		}
 
@@ -150,7 +151,7 @@ namespace yahbog {
 		constexpr void hblank_tick() noexcept;
 		constexpr void vblank_tick() noexcept;
 
-		using mode_ptr_t = void (gpu::*)() noexcept;
+		using mode_ptr_t = void (ppu_t::*)() noexcept;
 		mode_ptr_t mode_ptr;
 
 		constexpr void write_lcdc(std::uint16_t addr, std::uint8_t value) noexcept {
@@ -443,5 +444,3 @@ namespace yahbog {
 
 	};
 }
-
-#include <yahbog/impl/ppu_impl.h>

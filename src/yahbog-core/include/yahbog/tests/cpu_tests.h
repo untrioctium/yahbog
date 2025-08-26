@@ -13,7 +13,7 @@ consteval bool basic_test() {
 	mem_fns.read = [&rom](uint16_t addr) { return rom[addr]; };
 	mem_fns.write = [&rom](uint16_t addr, uint8_t value) { rom[addr] = value; };
 
-	auto z80 = yahbog::cpu{};
+	auto z80 = yahbog::cpu_t<yahbog::hardware_mode::dmg>{};
 
 	z80.reset(&mem_fns);
 	z80.prefetch(&mem_fns);

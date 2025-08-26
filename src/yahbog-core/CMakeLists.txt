@@ -3,6 +3,7 @@ FetchContent_MakeAvailable(nameof)
 
 add_library(
     yahbog-core STATIC
+    include/yahbog/common.h
     
     include/yahbog/cpu.h
     include/yahbog/emulator.h
@@ -18,6 +19,11 @@ add_library(
     include/yahbog/impl/emulator_impl.h
     include/yahbog/impl/ppu_impl.h
     include/yahbog/impl/rom_impl.h
+    include/yahbog/impl/cpu_impl.h
+    include/yahbog/impl/timer_impl.h
+    include/yahbog/impl/apu_impl.h
+    include/yahbog/impl/mmu_impl.h
+    include/yahbog/impl/io_impl.h
 
     include/yahbog/utility/constexpr_function.h
     include/yahbog/utility/serialization.h

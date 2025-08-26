@@ -1,5 +1,10 @@
 #include <yahbog-tests.h>
 
+std::string format_registers(const yahbog::registers& reg) {
+	return std::format("A:{:02X} F:{:02X} B:{:02X} C:{:02X} D:{:02X} E:{:02X} H:{:02X} L:{:02X} SP:{:04X} PC:{:04X}",
+		reg.a, reg.f, reg.b, reg.c, reg.d, reg.e, reg.h, reg.l, reg.sp, reg.pc - 1);
+}
+
 using memory_map = std::unordered_map<std::uint16_t, std::uint8_t>;
 
 struct test_mmu {
@@ -88,6 +93,7 @@ if ((expected) != (actual)) { \
 
 struct test_info {
 	std::string name;
+	std::size_t index;
 	std::size_t ncycles;
 
 	test_state initial_state;
@@ -120,7 +126,7 @@ struct test_info {
 		mem_fns.read = [&mem](uint16_t addr) { return mem.read(addr); };
 		mem_fns.write = [&mem](uint16_t addr, uint8_t value) { mem.write(addr, value); };
 
-		yahbog::cpu cpu{};
+		yahbog::cpu_t<yahbog::hardware_mode::dmg> cpu{};
 		cpu.reset( &mem_fns );
 		cpu.load_registers(initial_state.regs);
 		cpu.prefetch( &mem_fns );
@@ -165,6 +171,12 @@ struct test_info {
 		
 		for (auto& [addr, value] : final_state.memory) {
 			CHECK_MISMATCH(std::format("Memory 0x{:04X}", addr), value, mem.memory[addr]);
+		}
+
+		if(!good) {
+			std::cout << termcolor::red << "\n❌ " << name << " (" << std::format("{:04X}", index) << ")" << termcolor::reset << "\n";
+			std::cout << termcolor::red << "E: " << format_registers(final_state.regs) << termcolor::reset << "\n";
+			std::cout << termcolor::red << "A: " << format_registers(regs) << termcolor::reset << "\n";
 		}
 
 		return good;
@@ -222,7 +234,7 @@ bool run_single_step_tests() {
 	for (auto i = 0; i < archive_total; i++) {
 		zip_entry_openbyindex(archive, i);
 		std::string_view name = zip_entry_name(archive);
-		if (name.ends_with("json") && !name.ends_with("/10.json")) {
+		if (name.contains("v1") && name.ends_with("json") && !name.ends_with("/10.json")) {
 			files.insert(i);
 			file_total++;
 		}
@@ -252,6 +264,8 @@ bool run_single_step_tests() {
 		auto opcode = get_opcode_from_test_name(test_names[fc]);
 		if(opcode) {
 			test_names[fc] = std::format("{} ({})", test_names[fc], yahbog::opinfo[*opcode].name);
+		} else {
+			test_names[fc] = std::format("{} (Unknown)", test_names[fc]);
 		}
 
 		const auto size = zip_entry_size(archive);
@@ -267,7 +281,7 @@ bool run_single_step_tests() {
 
 	load_progress.finish();
 
-	const auto num_threads = std::thread::hardware_concurrency();
+	const auto num_threads = 1;//std::thread::hardware_concurrency();
 	suite.print_info("⚡ Running tests with " + std::to_string(num_threads) + " threads...");
 
 	// Test execution progress
@@ -290,20 +304,22 @@ bool run_single_step_tests() {
 
 			try {
 				nlohmann::json j = nlohmann::json::parse(data[i]);
-
-				test_names[i] = j[0]["name"];
-
+				std::size_t index = 0;
 				for (auto& test : j) {
 					test_info info = test_info::from_json(test);
+					info.name = test_names[i];
+					info.index = index++;
 					auto result = info.run();
 
 					if(!result) {
 						results[i] = 0;
+						break;
 					}
 				}
 			}
 			catch (const std::exception& e) {
 				results[i] = 0;
+				break;
 			}
 			
 			int current = completed_tests.fetch_add(1) + 1;

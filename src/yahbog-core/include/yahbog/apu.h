@@ -5,13 +5,14 @@
 
 namespace yahbog {
 
+	template<hardware_mode Mode>
 	class apu_t {
 	public:
 
 		consteval static auto address_range() {
 			return std::array{
-				mem_helpers::make_member_accessor<0xFF10, &apu_t::nr10>(),
-				mem_helpers::make_member_accessor<0xFF11, &apu_t::nr11>()
+				mem_helpers::make_member_accessor<0xFF10, &apu_t<Mode>::nr10>(),
+				mem_helpers::make_member_accessor<0xFF11, &apu_t<Mode>::nr11>()
 			};
 		}
 

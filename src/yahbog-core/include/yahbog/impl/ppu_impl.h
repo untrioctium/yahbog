@@ -5,19 +5,21 @@
 
 namespace yahbog {
 
-	constexpr void gpu::oam_tick() noexcept {
+	template<hardware_mode Mode>
+	constexpr void ppu_t<Mode>::oam_tick() noexcept {
 		if (mode_clock >= 80) {
 			mode_clock = 0;
 			lcd_status.v.mode = mode_t::vram;
-			mode_ptr = &gpu::vram_tick;
+			mode_ptr = &ppu_t::vram_tick;
 		}
 	}
 
-	constexpr void gpu::vram_tick() noexcept {
+	template<hardware_mode Mode>
+	constexpr void ppu_t<Mode>::vram_tick() noexcept {
 		if (mode_clock >= 172) {
 			mode_clock = 0;
 			lcd_status.v.mode = mode_t::hblank;
-			mode_ptr = &gpu::hblank_tick;
+			mode_ptr = &ppu_t::hblank_tick;
 
 			if(lcd_status.v.mode_hblank) {
 				request_interrupt(interrupt::stat, mem_fns);
@@ -27,13 +29,14 @@ namespace yahbog {
 		}
 	}
 
-	constexpr void gpu::hblank_tick() noexcept {
+	template<hardware_mode Mode>
+	constexpr void ppu_t<Mode>::hblank_tick() noexcept {
 		if (mode_clock >= 204) {
 			mode_clock = 0;
 			ly++;
 			if (ly == 144) {
 				lcd_status.v.mode = mode_t::vblank;
-				mode_ptr = &gpu::vblank_tick;
+				mode_ptr = &ppu_t::vblank_tick;
 				swap_buffers();
 				auto& current_draw_buffer = m_framebuffers[next_buffer_idx()];
 				std::fill(current_draw_buffer.begin(), current_draw_buffer.end(), 0);
@@ -46,7 +49,7 @@ namespace yahbog {
 			}
 			else {
 				lcd_status.v.mode = mode_t::oam;
-				mode_ptr = &gpu::oam_tick;
+				mode_ptr = &ppu_t::oam_tick;
 
 				if(lcd_status.v.mode_oam) {
 					request_interrupt(interrupt::stat, mem_fns);
@@ -55,14 +58,15 @@ namespace yahbog {
 		}
 	}
 
-	constexpr void gpu::vblank_tick() noexcept {
+	template<hardware_mode Mode>
+	constexpr void ppu_t<Mode>::vblank_tick() noexcept {
 		if (mode_clock >= 456) {
 			mode_clock = 0;
 			ly++;
 			if (ly > 153) {
 				ly = 0;
 				lcd_status.v.mode = mode_t::oam;
-				mode_ptr = &gpu::oam_tick;
+				mode_ptr = &ppu_t::oam_tick;
 
 				if(ly < 144 && lcd_status.v.mode_oam) {
 					request_interrupt(interrupt::stat, mem_fns);
@@ -71,7 +75,8 @@ namespace yahbog {
 		}
 	}
 
-	constexpr void gpu::tick() noexcept {
+	template<hardware_mode Mode>
+	constexpr void ppu_t<Mode>::tick() noexcept {
 
 		dma_tick();
 
@@ -94,7 +99,8 @@ namespace yahbog {
 		return (value >> start) & ((1 << size) - 1);
 	}
 
-	constexpr void gpu::render_scanline() noexcept
+	template<hardware_mode Mode>
+	constexpr void ppu_t<Mode>::render_scanline() noexcept
 	{
 		// Each BG map row is 32 bytes wide; include the row stride in the offset
 		const auto map_offset = (lcdc.v.bg_tile_map ? 0x1C00 : 0x1800)

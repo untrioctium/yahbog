@@ -61,11 +61,11 @@ namespace test_suite {
 	};
 
 	// Shared emulator execution functions
-	std::unique_ptr<yahbog::emulator> create_emulator(yahbog::hardware_mode mode);
+	std::unique_ptr<yahbog::dmg_emulator> create_emulator(yahbog::hardware_mode mode);
 	emulator_result run_rom_with_serial_check(const std::filesystem::path& rom_path, yahbog::hardware_mode mode);
 	
-	void write_framebuffer_to_console(const yahbog::emulator& emulator);
-	void write_framebuffer_to_file(const yahbog::emulator& emulator, const std::filesystem::path& path);
+	void write_framebuffer_to_console(const yahbog::dmg_emulator& emulator);
+	void write_framebuffer_to_file(const yahbog::dmg_emulator& emulator, const std::filesystem::path& path);
 
 	// Helper class for managing test suite execution and reporting
 	class test_suite_runner {

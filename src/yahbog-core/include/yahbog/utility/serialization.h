@@ -193,7 +193,7 @@ namespace yahbog {
 			[&members, &hasher]<std::size_t... I>(std::index_sequence<I...>) {
 				([&members, &hasher](){
 					constexpr auto ptr = std::get<I>(members);
-					using base_type = detail::traits::member_type_of<ptr>;
+					using base_type = traits::member_type_of<decltype(ptr)>;
 					static_assert(typeinfo::id_v<base_type> != 0, "Unknown serialized type");
 
 					hasher.process_bytes(nameof::nameof_member<ptr>());
