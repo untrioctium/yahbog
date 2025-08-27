@@ -153,38 +153,21 @@ namespace test_suite {
 		std::size_t cycle_count = 0;
 		const std::size_t max_cycles = 100000000; // 100M cycles safety limit
 
-		// Hook for serial output detection
-		emu->hook_writing([&serial_data, &serial_written](uint16_t addr, uint8_t value) {
-			// capture serial transfer data
-			if(addr == 0xFF01) [[unlikely]] {
-				serial_data += static_cast<char>(value);
-				serial_written = true;
-				return true;
-			}
-
-			return false;
-		});
-
-		/*emu->hook_reading([](uint16_t addr) -> yahbog::emulator::reader_hook_response {
-			// ignore audio registers
-			if(addr >= 0xFF10 && addr <= 0xFF3F) {
-				return std::uint8_t{0x00};
-			}
-
-			return {};
-		});*/
-
 		auto rom = yahbog::rom_t::load_rom(rom_path.string());
 		if(!rom) {
 			return {false, "Failed to load ROM", 0, std::chrono::milliseconds{0}};
 		}
 		emu->set_rom(std::move(rom));
 		emu->mem_fns.write(0xFF04, 0x00);
+		emu->io.reset();
 		emu->ppu.reset();
 
 		// Execute until pass/fail or timeout
 		while(cycle_count < max_cycles) {
-			serial_written = false;
+			serial_written = !emu->io.serial_empty();
+			if(serial_written) {
+				serial_data += static_cast<char>(emu->io.pop_serial());
+			}
 			emu->tick();
 			cycle_count++;
 
@@ -217,7 +200,7 @@ namespace test_suite {
 
 	void write_framebuffer_to_console(const yahbog::dmg_emulator& emulator) {
 		const auto& framebuffer = emulator.ppu.framebuffer();
-		using ppu_t = yahbog::ppu_t<yahbog::hardware_mode::dmg>;
+		using ppu_t = decltype(emulator.ppu);
 		for(std::size_t y = 0; y < ppu_t::screen_height; y++) {
 			for(std::size_t x = 0; x < ppu_t::screen_width; x++) {
 				auto color = emulator.ppu.get_pixel(x, y);
@@ -237,7 +220,7 @@ namespace test_suite {
 
 		const auto size_multiplier = 8;
 
-		using ppu_t = yahbog::ppu_t<yahbog::hardware_mode::dmg>;
+		using ppu_t = decltype(emulator.ppu);
 
 		std::array<std::uint8_t, ppu_t::screen_width * ppu_t::screen_height * 3 * size_multiplier * size_multiplier> rgb_framebuffer;
 

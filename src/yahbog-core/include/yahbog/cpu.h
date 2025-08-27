@@ -10,8 +10,8 @@
 
 namespace yahbog {
 
-	template<hardware_mode Mode>
-	class cpu_t : public serializable<cpu_t<Mode>> {
+	template<hardware_mode Mode, typename MemProvider>
+	class cpu_t : public serializable<cpu_t<Mode, MemProvider>> {
 	public:
 
 		consteval static auto address_range() {
@@ -21,20 +21,20 @@ namespace yahbog {
 			};
 		}
 
-		constexpr void reset(mem_fns_t* mem_fns) noexcept;
+		constexpr void reset(MemProvider* mem_fns) noexcept;
 
 		// Fetches the next instruction over one machine cycle
 		// This is only needed after resetting the CPU or handling an interrupt
 		// as the instructions themselves will handle fetching the next instruction
-		constexpr void prefetch(mem_fns_t* mem_fns) noexcept {
+		constexpr void prefetch(MemProvider* mem_fns) noexcept {
 			reg.ir = mem_fns->read(reg.pc);
-			m_next = opcodes::map[reg.ir].entry;
+			m_next = opcodes::map<MemProvider>()[reg.ir].entry;
 			reg.pc++;
 			m_cycles++;
 		}
 
 		// Performs one machine cycle
-		constexpr void cycle(mem_fns_t* mem_fns) noexcept;
+		constexpr void cycle(MemProvider* mem_fns) noexcept;
 
 		constexpr auto& r() const noexcept { return reg; }
 		constexpr auto cycles() const noexcept { return m_cycles; }
@@ -54,10 +54,14 @@ namespace yahbog {
 			};
 		}
 
+		constexpr void request_interrupt(interrupt i) noexcept {
+			if_.set_byte(if_.read() | (1 << static_cast<std::uint8_t>(i)));
+		}
+
 	private:
 
 		std::uint64_t m_cycles = 0;
-		next_stage_t m_next = opcodes::map[0x00].entry;
+		next_stage_t<MemProvider> m_next = opcodes::map<MemProvider>()[0x00].entry;
 
 		registers reg{};
 

@@ -29,7 +29,7 @@ namespace yahbog {
 		consteval static auto address_range() {
 			return std::array{ 
 				address_range_t<io_t>{0xFF00, &io_t::read_joypad, &mem_helpers::write_io_register<&io_t::joypad>},
-				mem_helpers::make_member_accessor<0xFF01, &io_t::serial_data>(),
+				address_range_t<io_t>{0xFF01, &mem_helpers::read_byte<&io_t::serial_data>, &io_t::write_serial},
 				mem_helpers::make_member_accessor<0xFF02, &io_t::sc>()
 			};
 		}
@@ -54,7 +54,23 @@ namespace yahbog {
 			sc.set_byte(0x7E);
 		}
 
+		constexpr std::uint8_t peek_serial() noexcept {
+			return serial_fifo.peek();
+		}
+
+		constexpr std::uint8_t pop_serial() noexcept {
+			return serial_fifo.pop();
+		}
+
+		constexpr bool serial_empty() noexcept {
+			return serial_fifo.empty();
+		}
+
 	private:
+
+		constexpr void write_serial(std::uint16_t addr, std::uint8_t value) noexcept {
+			serial_fifo.push(value);
+		}
 
 		constexpr std::uint8_t read_joypad([[maybe_unused]] std::uint16_t addr) noexcept {
 			std::uint8_t result = joypad.read() & 0b00001111;
@@ -87,6 +103,7 @@ namespace yahbog {
 
 		io_register<joypad_t> joypad;
 		std::uint8_t joypad_status = 0b11111111;
+		fifo<std::uint8_t, 16> serial_fifo;
 
 		std::uint8_t serial_data = 0x00;
 

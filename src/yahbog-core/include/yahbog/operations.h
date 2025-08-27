@@ -11,12 +11,13 @@
 
 // warning: copius macro (ab)use ahead
 
-#define OPCODE_ARGS yahbog::registers& reg, [[maybe_unused]] yahbog::mem_fns_t* mem
+#define OPCODE_ARGS yahbog::registers& reg, [[maybe_unused]] MemProvider* mem
 #define OPCODE_CALL reg, mem
 
-#define DEFINE_OPCODE(name) struct name
-#define DEFINE_STAGE(num) constexpr static next_stage_t stage##num(OPCODE_ARGS) noexcept
-#define BEGIN_STAGE_TABLE constexpr static next_stage_t stage_table(std::size_t stage) noexcept { switch(stage) {
+#define DEFINE_OPCODE(name) template<typename MemProvider> struct name
+#define DEFINE_TEMPLATE_OPCODE(name, ...) template<typename MemProvider, __VA_ARGS__> struct name
+#define DEFINE_STAGE(num) constexpr static next_stage_t<MemProvider> stage##num(OPCODE_ARGS) noexcept
+#define BEGIN_STAGE_TABLE constexpr static next_stage_t<MemProvider> stage_table(std::size_t stage) noexcept { switch(stage) {
 #define STAGE_ENTRY(num) case num: return &stage##num;
 #define END_STAGE_TABLE default: return nullptr; } std::unreachable(); }
 #define MOVE_TO_STAGE(num) (reg.mupc = num, &stage##num)
@@ -33,8 +34,9 @@
 #define DECLARE_STAGES_8 DECLARE_STAGE_COUNT(8) BEGIN_STAGE_TABLE STAGE_ENTRY(0) STAGE_ENTRY(1) STAGE_ENTRY(2) STAGE_ENTRY(3) STAGE_ENTRY(4) STAGE_ENTRY(5) STAGE_ENTRY(6) STAGE_ENTRY(7) END_STAGE_TABLE
 
 #define DEFINE_SIMPLE_OPCODE(name) DEFINE_OPCODE(name) { DECLARE_STAGES_1; DEFINE_STAGE(0) { 
+#define DEFINE_SIMPLE_TEMPLATE_OPCODE(name, ...) DEFINE_TEMPLATE_OPCODE(name, __VA_ARGS__) { DECLARE_STAGES_1; DEFINE_STAGE(0) { 
 	
-#define END_SIMPLE_OPCODE return common::prefetch(OPCODE_CALL); } };
+#define END_SIMPLE_OPCODE return common::prefetch<MemProvider>(OPCODE_CALL); } };
 
 namespace yahbog {
 
@@ -77,7 +79,7 @@ namespace yahbog {
 		C
 	};
 
-	template<jump_condition cc>
+	template<jump_condition cc, typename MemProvider>
 	constexpr bool jump_condition_met(OPCODE_ARGS) {
 		if constexpr (cc == jump_condition::NZ) {
 			return !reg.FZ();
@@ -95,7 +97,6 @@ namespace yahbog {
 		std::unreachable();
 	}
 
-	using opcode_fn = void(*)(OPCODE_ARGS)noexcept;
 	using r8_ptr = std::uint8_t yahbog::registers::*;
 	using r16_ptr = std::uint16_t yahbog::registers::*;
 
@@ -123,14 +124,18 @@ namespace yahbog {
 	constexpr auto regpair_de = regpair_t{ &yahbog::registers::d, &yahbog::registers::e };
 	constexpr auto regpair_hl = regpair_t{ &yahbog::registers::h, &yahbog::registers::l };
 
+	template<typename MemProvider>
 	struct next_stage_t;
-	using continuation_fn_t = next_stage_t(*)(OPCODE_ARGS);
 
+	template<typename MemProvider>
+	using continuation_fn_t = next_stage_t<MemProvider>(*)(OPCODE_ARGS);
+
+	template<typename MemProvider>
 	struct next_stage_t {
-		continuation_fn_t fn = nullptr;
+		continuation_fn_t<MemProvider> fn = nullptr;
 
 		constexpr next_stage_t() = default;
-		constexpr next_stage_t(continuation_fn_t fn) : fn(fn) {}
+		constexpr next_stage_t(continuation_fn_t<MemProvider> fn) : fn(fn) {}
 
 		constexpr next_stage_t(const next_stage_t&) = default;
 		constexpr next_stage_t(next_stage_t&&) = default;
@@ -138,7 +143,7 @@ namespace yahbog {
 		constexpr next_stage_t& operator=(const next_stage_t&) = default;
 		constexpr next_stage_t& operator=(next_stage_t&&) = default;
 
-		constexpr next_stage_t operator()(OPCODE_ARGS) noexcept {
+		constexpr next_stage_t<MemProvider> operator()(OPCODE_ARGS) noexcept {
 			return fn(OPCODE_CALL);
 		}
 
@@ -149,9 +154,14 @@ namespace yahbog {
 
 	namespace opcodes {
 		namespace common {
-			constexpr next_stage_t prefetch(OPCODE_ARGS) noexcept;
-			constexpr next_stage_t prefetch_and_reset(OPCODE_ARGS) noexcept;
-			constexpr next_stage_t fetch_opcode(OPCODE_ARGS) noexcept;
+			template<typename MemProvider>
+			constexpr next_stage_t<MemProvider> prefetch(OPCODE_ARGS) noexcept;
+
+			template<typename MemProvider>
+			constexpr next_stage_t<MemProvider> prefetch_and_reset(OPCODE_ARGS) noexcept;
+
+			template<typename MemProvider>
+			constexpr next_stage_t<MemProvider> fetch_opcode(OPCODE_ARGS) noexcept;
 		}
 
 		DEFINE_SIMPLE_OPCODE(adc_aa)
@@ -610,8 +620,7 @@ namespace yahbog {
 			}
 		};
 
-		template<int op1, regpair_t op2>
-		DEFINE_OPCODE(bit_r16P) {
+		DEFINE_TEMPLATE_OPCODE(bit_r16P, int op1, regpair_t op2) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -629,8 +638,7 @@ namespace yahbog {
 			}
 		};
 
-		template<int op1, regpair_t op2>
-		DEFINE_OPCODE(res_r16P) {
+		DEFINE_TEMPLATE_OPCODE(res_r16P, int op1, regpair_t op2) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -650,8 +658,7 @@ namespace yahbog {
 			}
 		};
 
-		template<int op1, regpair_t op2>
-		DEFINE_OPCODE(set_r16P) {
+		DEFINE_TEMPLATE_OPCODE(set_r16P, int op1, regpair_t op2) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -671,8 +678,7 @@ namespace yahbog {
 			}
 		};
 
-		template<int op1, r8_ptr op2>
-		DEFINE_SIMPLE_OPCODE(bit_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(bit_r8, int op1, r8_ptr op2) 
 			auto val = reg.*op2;
 			auto bit = 1 << op1;
 
@@ -680,8 +686,7 @@ namespace yahbog {
 			reg.FN(0); reg.FH(1);
 		END_SIMPLE_OPCODE;
 
-		template<int op1, r8_ptr op2>
-		DEFINE_SIMPLE_OPCODE(res_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(res_r8, int op1, r8_ptr op2)
 			auto val = reg.*op2;
 			auto bit = 1 << op1;
 
@@ -689,8 +694,7 @@ namespace yahbog {
 			reg.*op2 = val;
 		END_SIMPLE_OPCODE;
 
-		template<int op1, r8_ptr op2>
-		DEFINE_SIMPLE_OPCODE(set_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(set_r8, int op1, r8_ptr op2)
 			auto val = reg.*op2;
 			auto bit = 1 << op1;
 
@@ -698,8 +702,7 @@ namespace yahbog {
 			reg.*op2 = val;
 		END_SIMPLE_OPCODE;
 
-		template<int op1>
-		DEFINE_OPCODE(rst_n8) {
+		DEFINE_TEMPLATE_OPCODE(rst_n8, int op1) {
 			DECLARE_STAGES_4;
 
 			DEFINE_STAGE(0) {
@@ -724,8 +727,7 @@ namespace yahbog {
 			}
 		};
 
-		template<jump_condition op1>
-		DEFINE_OPCODE(call_cc_n16) {
+		DEFINE_TEMPLATE_OPCODE(call_cc_n16, jump_condition op1) {
 			DECLARE_STAGES_6;
 
 			DEFINE_STAGE(0) {
@@ -767,8 +769,7 @@ namespace yahbog {
 			}
 		};
 
-		template<jump_condition op1>
-		DEFINE_OPCODE(jp_cc_n16) {
+		DEFINE_TEMPLATE_OPCODE(jp_cc_n16, jump_condition op1) {
 			DECLARE_STAGES_4;
 
 			DEFINE_STAGE(0) {
@@ -798,8 +799,7 @@ namespace yahbog {
 			}
 		};
 
-		template<jump_condition op1>
-		DEFINE_OPCODE(jr_cc_n8) {
+		DEFINE_TEMPLATE_OPCODE(jr_cc_n8, jump_condition op1) {
 			DECLARE_STAGES_4;
 
 			DEFINE_STAGE(0) {
@@ -831,8 +831,7 @@ namespace yahbog {
 			}
 		};
 
-		template<jump_condition op1>
-		DEFINE_OPCODE(ret_cc) {
+		DEFINE_TEMPLATE_OPCODE(ret_cc, jump_condition op1) {
 			DECLARE_STAGES_5;
 
 			DEFINE_STAGE(0) {
@@ -865,8 +864,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1, regpair_t op2>
-		DEFINE_OPCODE(add_r16_r16) {
+		DEFINE_TEMPLATE_OPCODE(add_r16_r16, regpair_t op1, regpair_t op2) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -955,8 +953,7 @@ namespace yahbog {
 				
 		};
 
-		template<regpair_t op1, r8_ptr op2>
-		DEFINE_OPCODE(ld_r16PD_r8) {
+		DEFINE_TEMPLATE_OPCODE(ld_r16PD_r8, regpair_t op1, r8_ptr op2) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -970,8 +967,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1, r8_ptr op2>
-		DEFINE_OPCODE(ld_r16PI_r8) {
+		DEFINE_TEMPLATE_OPCODE(ld_r16PI_r8, regpair_t op1, r8_ptr op2) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -985,8 +981,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1, r8_ptr op2>
-		DEFINE_OPCODE(ld_r16P_r8) {
+		DEFINE_TEMPLATE_OPCODE(ld_r16P_r8, regpair_t op1, r8_ptr op2) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -999,8 +994,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(adc_r16P) {
+		DEFINE_TEMPLATE_OPCODE(adc_r16P, regpair_t op1) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1023,8 +1017,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(add_r16P) {
+		DEFINE_TEMPLATE_OPCODE(add_r16P, regpair_t op1) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1078,8 +1071,7 @@ namespace yahbog {
 			
 		};
 			
-		template<regpair_t op1>
-		DEFINE_OPCODE(and_r16P) {
+		DEFINE_TEMPLATE_OPCODE(and_r16P, regpair_t op1) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1096,8 +1088,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(cp_r16P) {
+		DEFINE_TEMPLATE_OPCODE(cp_r16P, regpair_t op1) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1115,8 +1106,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(dec_r16) {
+		DEFINE_TEMPLATE_OPCODE(dec_r16, regpair_t op1) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1142,8 +1132,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(dec_r16P) {
+		DEFINE_TEMPLATE_OPCODE(dec_r16P, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1165,8 +1154,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(inc_r16) {
+		DEFINE_TEMPLATE_OPCODE(inc_r16, regpair_t op1) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1193,8 +1181,7 @@ namespace yahbog {
 			
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(inc_r16P) {
+		DEFINE_TEMPLATE_OPCODE(inc_r16P, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1226,8 +1213,7 @@ namespace yahbog {
 			}
 		};
 
-		template<r16_ptr op1>
-		DEFINE_OPCODE(ld_n16P_r16) {
+		DEFINE_TEMPLATE_OPCODE(ld_n16P_r16, r16_ptr op1) {
 			DECLARE_STAGES_5;
 
 			DEFINE_STAGE(0) {
@@ -1259,8 +1245,7 @@ namespace yahbog {
 			
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(ld_r16P_n8) {
+		DEFINE_TEMPLATE_OPCODE(ld_r16P_n8, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1279,8 +1264,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(ld_r16_n16) {
+		DEFINE_TEMPLATE_OPCODE(ld_r16_n16, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1322,8 +1306,7 @@ namespace yahbog {
 			}
 		};
 		
-		template<regpair_t op1>
-		DEFINE_OPCODE(or_r16P) {
+		DEFINE_TEMPLATE_OPCODE(or_r16P, regpair_t op1) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1341,8 +1324,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(pop_r16) {
+		DEFINE_TEMPLATE_OPCODE(pop_r16, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1368,8 +1350,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(push_r16) {
+		DEFINE_TEMPLATE_OPCODE(push_r16, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1393,8 +1374,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(rl_r16P) {
+		DEFINE_TEMPLATE_OPCODE(rl_r16P, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1422,8 +1402,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(rlc_r16P) {
+		DEFINE_TEMPLATE_OPCODE(rlc_r16P, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1450,8 +1429,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(rr_r16P) {
+		DEFINE_TEMPLATE_OPCODE(rr_r16P, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1479,8 +1457,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(rrc_r16P) {
+		DEFINE_TEMPLATE_OPCODE(rrc_r16P, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1504,8 +1481,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(sbc_r16P) {
+		DEFINE_TEMPLATE_OPCODE(sbc_r16P, regpair_t op1) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1530,8 +1506,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(sla_r16P) {
+		DEFINE_TEMPLATE_OPCODE(sla_r16P, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1556,8 +1531,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(sra_r16P) {
+		DEFINE_TEMPLATE_OPCODE(sra_r16P, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1584,8 +1558,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(srl_r16P) {
+		DEFINE_TEMPLATE_OPCODE(srl_r16P, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1612,8 +1585,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(sub_r16P) {
+		DEFINE_TEMPLATE_OPCODE(sub_r16P, regpair_t op1) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1634,8 +1606,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(swap_r16P) {
+		DEFINE_TEMPLATE_OPCODE(swap_r16P, regpair_t op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1662,8 +1633,7 @@ namespace yahbog {
 			}
 		};
 
-		template<regpair_t op1>
-		DEFINE_OPCODE(xor_r16P) {
+		DEFINE_TEMPLATE_OPCODE(xor_r16P, regpair_t op1) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1680,8 +1650,7 @@ namespace yahbog {
 			}
 		};
 
-		template<r8_ptr op1, regpair_t op2>
-		DEFINE_OPCODE(ld_r8_r16P) {
+		DEFINE_TEMPLATE_OPCODE(ld_r8_r16P, r8_ptr op1, regpair_t op2) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1695,8 +1664,7 @@ namespace yahbog {
 			}
 		};
 
-		template<r8_ptr op1, regpair_t op2>
-		DEFINE_OPCODE(ld_r8_r16PD) {
+		DEFINE_TEMPLATE_OPCODE(ld_r8_r16PD, r8_ptr op1, regpair_t op2) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1726,13 +1694,11 @@ namespace yahbog {
 			}
 		};
 
-		template<r8_ptr op1, r8_ptr op2>
-		DEFINE_SIMPLE_OPCODE(ld_r8_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(ld_r8_r8, r8_ptr op1, r8_ptr op2)
 			reg.*op1 = reg.*op2;
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1, r8_ptr op2>
-		DEFINE_OPCODE(ldh_r8P_r8) {
+		DEFINE_TEMPLATE_OPCODE(ldh_r8P_r8, r8_ptr op1, r8_ptr op2) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1745,8 +1711,7 @@ namespace yahbog {
 			}
 		};
 
-		template<r8_ptr op1, r8_ptr op2>
-		DEFINE_OPCODE(ldh_r8_r8P) {
+		DEFINE_TEMPLATE_OPCODE(ldh_r8_r8P, r8_ptr op1, r8_ptr op2) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1759,8 +1724,7 @@ namespace yahbog {
 			}
 		};
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(adc_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(adc_r8, r8_ptr op1)
 			std::uint8_t op = reg.FC();
 
 			reg.FH((reg.a & 0xF) + (reg.*op1 & 0xF) + reg.FC() > 0xF);
@@ -1773,8 +1737,7 @@ namespace yahbog {
 			reg.FN(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(add_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(add_r8, r8_ptr op1)
 			reg.FH(half_carries_add(reg.a, reg.*op1));
 			reg.FC(carries_add(reg.a, reg.*op1));
 			reg.a += reg.*op1;
@@ -1783,16 +1746,14 @@ namespace yahbog {
 			reg.FN(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(and_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(and_r8, r8_ptr op1)
 			reg.a &= reg.*op1;
 
 			reg.FZ(reg.a == 0);
 			reg.FN(0); reg.FH(1); reg.FC(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(cp_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(cp_r8, r8_ptr op1)
 			auto op = reg.*op1;
 
 			reg.FZ(reg.a == op);
@@ -1802,8 +1763,7 @@ namespace yahbog {
 			reg.FN(1);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(dec_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(dec_r8, r8_ptr op1)
 			reg.FH(half_carries_sub(reg.*op1, 1));
 			(reg.*op1)--;
 			reg.FZ(reg.*op1 == 0);
@@ -1811,16 +1771,14 @@ namespace yahbog {
 			reg.FN(1);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(inc_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(inc_r8, r8_ptr op1)
 			reg.FH(half_carries_add(reg.*op1, 1));
 			(reg.*op1)++;
 			reg.FZ(reg.*op1 == 0);
 			reg.FN(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_OPCODE(ld_n16P_r8) {
+		DEFINE_TEMPLATE_OPCODE(ld_n16P_r8, r8_ptr op1) {
 			DECLARE_STAGES_4;
 
 			DEFINE_STAGE(0) {
@@ -1845,8 +1803,7 @@ namespace yahbog {
 			}
 		};
 
-		template<r8_ptr op1>
-		DEFINE_OPCODE(ld_r8_n16P) {
+		DEFINE_TEMPLATE_OPCODE(ld_r8_n16P, r8_ptr op1) {
 			DECLARE_STAGES_4;
 
 			DEFINE_STAGE(0) {
@@ -1872,8 +1829,7 @@ namespace yahbog {
 			}
 		};
 
-		template<r8_ptr op1>
-		DEFINE_OPCODE(ld_r8_n8) {
+		DEFINE_TEMPLATE_OPCODE(ld_r8_n8, r8_ptr op1) {
 			DECLARE_STAGES_2;
 
 			DEFINE_STAGE(0) {
@@ -1888,8 +1844,7 @@ namespace yahbog {
 			}
 		};
 
-		template<r8_ptr op1>
-		DEFINE_OPCODE(ldh_n8P_r8) {
+		DEFINE_TEMPLATE_OPCODE(ldh_n8P_r8, r8_ptr op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1908,8 +1863,7 @@ namespace yahbog {
 			}
 		};
 
-		template<r8_ptr op1>
-		DEFINE_OPCODE(ldh_r8_n8P) {
+		DEFINE_TEMPLATE_OPCODE(ldh_r8_n8P, r8_ptr op1) {
 			DECLARE_STAGES_3;
 
 			DEFINE_STAGE(0) {
@@ -1929,16 +1883,14 @@ namespace yahbog {
 			}
 		};
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(or_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(or_r8, r8_ptr op1)
 			reg.a |= reg.*op1;
 
 			reg.FZ(reg.a == 0);
 			reg.FN(0); reg.FH(0); reg.FC(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(rl_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(rl_r8, r8_ptr op1)
 			auto val = reg.*op1;
 			auto carry = reg.FC();
 
@@ -1951,8 +1903,7 @@ namespace yahbog {
 			reg.FN(0); reg.FH(0);
 		END_SIMPLE_OPCODE;
 		
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(rlc_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(rlc_r8, r8_ptr op1)
 			reg.FC(reg.*op1 >> 7);
 			reg.*op1 = (reg.*op1 << 1) | reg.FC();
 
@@ -1961,8 +1912,7 @@ namespace yahbog {
 			reg.FN(0); reg.FH(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(rr_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(rr_r8, r8_ptr op1)
 			auto carry = reg.FC();
 
 			reg.FC(reg.*op1 & 1);
@@ -1972,8 +1922,7 @@ namespace yahbog {
 			reg.FN(0); reg.FH(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(rrc_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(rrc_r8, r8_ptr op1)
 			reg.FC(reg.*op1 & 1);
 			reg.*op1 = (reg.*op1 >> 1) | (reg.FC() << 7);
 
@@ -1982,8 +1931,7 @@ namespace yahbog {
 			reg.FN(0); reg.FH(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(sbc_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(sbc_r8, r8_ptr op1)
 			int res = (reg.a & 0x0F) - (reg.*op1 & 0x0F) - reg.FC();
 			int op = reg.*op1 + reg.FC();
 
@@ -1996,8 +1944,7 @@ namespace yahbog {
 			reg.FZ(reg.a == 0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(sla_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(sla_r8, r8_ptr op1)
 			reg.FC(reg.*op1 >> 7);
 			reg.*op1 <<= 1;
 			reg.FZ(reg.*op1 == 0);
@@ -2005,8 +1952,7 @@ namespace yahbog {
 			reg.FN(0); reg.FH(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(sra_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(sra_r8, r8_ptr op1)
 			reg.FC(reg.*op1 & 1);
 			reg.*op1 = (reg.*op1 >> 1) | (reg.*op1 & 0x80);
 
@@ -2014,8 +1960,7 @@ namespace yahbog {
 			reg.FN(0); reg.FH(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(srl_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(srl_r8, r8_ptr op1)
 			reg.FC(reg.*op1 & 1);
 			reg.*op1 >>= 1;
 
@@ -2023,8 +1968,7 @@ namespace yahbog {
 			reg.FN(0); reg.FH(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(sub_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(sub_r8, r8_ptr op1)
 			auto op = reg.*op1;
 
 			reg.FZ(reg.a == op);
@@ -2036,8 +1980,7 @@ namespace yahbog {
 			reg.FN(1);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(swap_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(swap_r8, r8_ptr op1)
 			auto upper = reg.*op1 >> 4;
 			auto lower = reg.*op1 & 0xF;
 
@@ -2047,16 +1990,14 @@ namespace yahbog {
 			reg.FN(0); reg.FH(0); reg.FC(0);
 		END_SIMPLE_OPCODE;
 
-		template<r8_ptr op1>
-		DEFINE_SIMPLE_OPCODE(xor_r8)
+		DEFINE_SIMPLE_TEMPLATE_OPCODE(xor_r8, r8_ptr op1)
 			reg.a ^= reg.*op1;
 
 			reg.FZ(reg.a == 0);
 			reg.FN(0); reg.FH(0); reg.FC(0);
 		END_SIMPLE_OPCODE;
 
-		template<std::uint8_t addr>
-		DEFINE_OPCODE(isr) {
+		DEFINE_TEMPLATE_OPCODE(isr, std::uint8_t addr) {
 			DECLARE_STAGES_5;
 
 			DEFINE_STAGE(0) {
@@ -2089,552 +2030,569 @@ namespace yahbog {
 			}
 		};
 
+		template<typename MemProvider>
 		struct opcode_traits {
-			using table_fn_t = next_stage_t(*)(std::size_t);
+			using table_fn_t = next_stage_t<MemProvider>(*)(std::size_t);
 
-			continuation_fn_t entry;
+			continuation_fn_t<MemProvider> entry;
 			table_fn_t table;
 
 			template<typename T>
-			consteval static auto make() noexcept {
-				return opcode_traits{.entry = &T::stage0, .table = &T::stage_table};
+			constexpr static opcode_traits<MemProvider> make() noexcept {
+				return opcode_traits<MemProvider>{.entry = &T::stage0, .table = &T::stage_table};
 			}
 		};
 
-		constexpr auto map = []() {
-			std::array<opcode_traits, 512> ops{};
-
-			ops[0x00] = opcode_traits::make<nop>();
-			ops[0x01] = opcode_traits::make<ld_r16_n16<regpair_bc>>();
-			ops[0x02] = opcode_traits::make<ld_r16P_r8<regpair_bc, &registers::a>>();
-			ops[0x03] = opcode_traits::make<inc_r16<regpair_bc>>();
-			ops[0x04] = opcode_traits::make<inc_r8<&registers::b>>();
-			ops[0x05] = opcode_traits::make<dec_r8<&registers::b>>();
-			ops[0x06] = opcode_traits::make<ld_r8_n8<&registers::b>>();
-			ops[0x07] = opcode_traits::make<rlca>();
-			ops[0x08] = opcode_traits::make<ld_n16P_r16<&registers::sp>>();
-			ops[0x09] = opcode_traits::make<add_r16_r16<regpair_hl, regpair_bc>>();
-			ops[0x0A] = opcode_traits::make<ld_r8_r16P<&registers::a, regpair_bc>>();
-			ops[0x0B] = opcode_traits::make<dec_r16<regpair_bc>>();
-			ops[0x0C] = opcode_traits::make<inc_r8<&registers::c>>();
-			ops[0x0D] = opcode_traits::make<dec_r8<&registers::c>>();
-			ops[0x0E] = opcode_traits::make<ld_r8_n8<&registers::c>>();
-			ops[0x0F] = opcode_traits::make<rrca>();
-			ops[0x10] = opcode_traits::make<stop_n8>();
-			ops[0x11] = opcode_traits::make<ld_r16_n16<regpair_de>>();
-			ops[0x12] = opcode_traits::make<ld_r16P_r8<regpair_de, &registers::a>>();
-			ops[0x13] = opcode_traits::make<inc_r16<regpair_de>>();
-			ops[0x14] = opcode_traits::make<inc_r8<&registers::d>>();
-			ops[0x15] = opcode_traits::make<dec_r8<&registers::d>>();
-			ops[0x16] = opcode_traits::make<ld_r8_n8<&registers::d>>();
-			ops[0x17] = opcode_traits::make<rla>();
-			ops[0x18] = opcode_traits::make<jr_n8>();
-			ops[0x19] = opcode_traits::make<add_r16_r16<regpair_hl, regpair_de>>();
-			ops[0x1A] = opcode_traits::make<ld_r8_r16P<&registers::a, regpair_de>>();
-			ops[0x1B] = opcode_traits::make<dec_r16<regpair_de>>();
-			ops[0x1C] = opcode_traits::make<inc_r8<&registers::e>>();
-			ops[0x1D] = opcode_traits::make<dec_r8<&registers::e>>();
-			ops[0x1E] = opcode_traits::make<ld_r8_n8<&registers::e>>();
-			ops[0x1F] = opcode_traits::make<rra>();
-			ops[0x20] = opcode_traits::make<jr_cc_n8<jump_condition::NZ>>();
-			ops[0x21] = opcode_traits::make<ld_r16_n16<regpair_hl>>();
-			ops[0x22] = opcode_traits::make<ld_r16PI_r8<regpair_hl, &registers::a>>();
-			ops[0x23] = opcode_traits::make<inc_r16<regpair_hl>>();
-			ops[0x24] = opcode_traits::make<inc_r8<&registers::h>>();
-			ops[0x25] = opcode_traits::make<dec_r8<&registers::h>>();
-			ops[0x26] = opcode_traits::make<ld_r8_n8<&registers::h>>();
-			ops[0x27] = opcode_traits::make<daa>();
-			ops[0x28] = opcode_traits::make<jr_cc_n8<jump_condition::Z>>();
-			ops[0x29] = opcode_traits::make<add_r16_r16<regpair_hl, regpair_hl>>();
-			ops[0x2A] = opcode_traits::make<ld_a_hlp>();
-			ops[0x2B] = opcode_traits::make<dec_r16<regpair_hl>>();
-			ops[0x2C] = opcode_traits::make<inc_r8<&registers::l>>();
-			ops[0x2D] = opcode_traits::make<dec_r8<&registers::l>>();
-			ops[0x2E] = opcode_traits::make<ld_r8_n8<&registers::l>>();
-			ops[0x2F] = opcode_traits::make<cpl>();
-			ops[0x30] = opcode_traits::make<jr_cc_n8<jump_condition::NC>>();
-			ops[0x31] = opcode_traits::make<ld_sp_n16>();
-			ops[0x32] = opcode_traits::make<ld_r16PD_r8<regpair_hl, &registers::a>>();
-			ops[0x33] = opcode_traits::make<inc_sp>();
-			ops[0x34] = opcode_traits::make<inc_r16P<regpair_hl>>();
-			ops[0x35] = opcode_traits::make<dec_r16P<regpair_hl>>();
-			ops[0x36] = opcode_traits::make<ld_r16P_n8<regpair_hl>>();
-			ops[0x37] = opcode_traits::make<scf>();
-			ops[0x38] = opcode_traits::make<jr_cc_n8<jump_condition::C>>();
-			ops[0x39] = opcode_traits::make<add_hl_sp>();
-			ops[0x3A] = opcode_traits::make<ld_r8_r16PD<&registers::a, regpair_hl>>();
-			ops[0x3B] = opcode_traits::make<dec_sp>();
-			ops[0x3C] = opcode_traits::make<inc_r8<&registers::a>>();
-			ops[0x3D] = opcode_traits::make<dec_r8<&registers::a>>();
-			ops[0x3E] = opcode_traits::make<ld_r8_n8<&registers::a>>();
-			ops[0x3F] = opcode_traits::make<ccf>();
-			ops[0x40] = opcode_traits::make<ld_r8_r8<&registers::b, &registers::b>>();
-			ops[0x41] = opcode_traits::make<ld_r8_r8<&registers::b, &registers::c>>();
-			ops[0x42] = opcode_traits::make<ld_r8_r8<&registers::b, &registers::d>>();
-			ops[0x43] = opcode_traits::make<ld_r8_r8<&registers::b, &registers::e>>();
-			ops[0x44] = opcode_traits::make<ld_r8_r8<&registers::b, &registers::h>>();
-			ops[0x45] = opcode_traits::make<ld_r8_r8<&registers::b, &registers::l>>();
-			ops[0x46] = opcode_traits::make<ld_r8_r16P<&registers::b, regpair_hl>>();
-			ops[0x47] = opcode_traits::make<ld_r8_r8<&registers::b, &registers::a>>();
-			ops[0x48] = opcode_traits::make<ld_r8_r8<&registers::c, &registers::b>>();
-			ops[0x49] = opcode_traits::make<ld_r8_r8<&registers::c, &registers::c>>();
-			ops[0x4A] = opcode_traits::make<ld_r8_r8<&registers::c, &registers::d>>();
-			ops[0x4B] = opcode_traits::make<ld_r8_r8<&registers::c, &registers::e>>();
-			ops[0x4C] = opcode_traits::make<ld_r8_r8<&registers::c, &registers::h>>();
-			ops[0x4D] = opcode_traits::make<ld_r8_r8<&registers::c, &registers::l>>();
-			ops[0x4E] = opcode_traits::make<ld_r8_r16P<&registers::c, regpair_hl>>();
-			ops[0x4F] = opcode_traits::make<ld_r8_r8<&registers::c, &registers::a>>();
-			ops[0x50] = opcode_traits::make<ld_r8_r8<&registers::d, &registers::b>>();
-			ops[0x51] = opcode_traits::make<ld_r8_r8<&registers::d, &registers::c>>();
-			ops[0x52] = opcode_traits::make<ld_r8_r8<&registers::d, &registers::d>>();
-			ops[0x53] = opcode_traits::make<ld_r8_r8<&registers::d, &registers::e>>();
-			ops[0x54] = opcode_traits::make<ld_r8_r8<&registers::d, &registers::h>>();
-			ops[0x55] = opcode_traits::make<ld_r8_r8<&registers::d, &registers::l>>();
-			ops[0x56] = opcode_traits::make<ld_r8_r16P<&registers::d, regpair_hl>>();
-			ops[0x57] = opcode_traits::make<ld_r8_r8<&registers::d, &registers::a>>();
-			ops[0x58] = opcode_traits::make<ld_r8_r8<&registers::e, &registers::b>>();
-			ops[0x59] = opcode_traits::make<ld_r8_r8<&registers::e, &registers::c>>();
-			ops[0x5A] = opcode_traits::make<ld_r8_r8<&registers::e, &registers::d>>();
-			ops[0x5B] = opcode_traits::make<ld_r8_r8<&registers::e, &registers::e>>();
-			ops[0x5C] = opcode_traits::make<ld_r8_r8<&registers::e, &registers::h>>();
-			ops[0x5D] = opcode_traits::make<ld_r8_r8<&registers::e, &registers::l>>();
-			ops[0x5E] = opcode_traits::make<ld_r8_r16P<&registers::e, regpair_hl>>();
-			ops[0x5F] = opcode_traits::make<ld_r8_r8<&registers::e, &registers::a>>();
-			ops[0x60] = opcode_traits::make<ld_r8_r8<&registers::h, &registers::b>>();
-			ops[0x61] = opcode_traits::make<ld_r8_r8<&registers::h, &registers::c>>();
-			ops[0x62] = opcode_traits::make<ld_r8_r8<&registers::h, &registers::d>>();
-			ops[0x63] = opcode_traits::make<ld_r8_r8<&registers::h, &registers::e>>();
-			ops[0x64] = opcode_traits::make<ld_r8_r8<&registers::h, &registers::h>>();
-			ops[0x65] = opcode_traits::make<ld_r8_r8<&registers::h, &registers::l>>();
-			ops[0x66] = opcode_traits::make<ld_r8_r16P<&registers::h, regpair_hl>>();
-			ops[0x67] = opcode_traits::make<ld_r8_r8<&registers::h, &registers::a>>();
-			ops[0x68] = opcode_traits::make<ld_r8_r8<&registers::l, &registers::b>>();
-			ops[0x69] = opcode_traits::make<ld_r8_r8<&registers::l, &registers::c>>();
-			ops[0x6A] = opcode_traits::make<ld_r8_r8<&registers::l, &registers::d>>();
-			ops[0x6B] = opcode_traits::make<ld_r8_r8<&registers::l, &registers::e>>();
-			ops[0x6C] = opcode_traits::make<ld_r8_r8<&registers::l, &registers::h>>();
-			ops[0x6D] = opcode_traits::make<ld_r8_r8<&registers::l, &registers::l>>();
-			ops[0x6E] = opcode_traits::make<ld_r8_r16P<&registers::l, regpair_hl>>();
-			ops[0x6F] = opcode_traits::make<ld_r8_r8<&registers::l, &registers::a>>();
-			ops[0x70] = opcode_traits::make<ld_r16P_r8<regpair_hl, &registers::b>>();
-			ops[0x71] = opcode_traits::make<ld_r16P_r8<regpair_hl, &registers::c>>();
-			ops[0x72] = opcode_traits::make<ld_r16P_r8<regpair_hl, &registers::d>>();
-			ops[0x73] = opcode_traits::make<ld_r16P_r8<regpair_hl, &registers::e>>();
-			ops[0x74] = opcode_traits::make<ld_r16P_r8<regpair_hl, &registers::h>>();
-			ops[0x75] = opcode_traits::make<ld_r16P_r8<regpair_hl, &registers::l>>();
-			ops[0x76] = opcode_traits::make<halt>();
-			ops[0x77] = opcode_traits::make<ld_r16P_r8<regpair_hl, &registers::a>>();
-			ops[0x78] = opcode_traits::make<ld_r8_r8<&registers::a, &registers::b>>();
-			ops[0x79] = opcode_traits::make<ld_r8_r8<&registers::a, &registers::c>>();
-			ops[0x7A] = opcode_traits::make<ld_r8_r8<&registers::a, &registers::d>>();
-			ops[0x7B] = opcode_traits::make<ld_r8_r8<&registers::a, &registers::e>>();
-			ops[0x7C] = opcode_traits::make<ld_r8_r8<&registers::a, &registers::h>>();
-			ops[0x7D] = opcode_traits::make<ld_r8_r8<&registers::a, &registers::l>>();
-			ops[0x7E] = opcode_traits::make<ld_r8_r16P<&registers::a, regpair_hl>>();
-			ops[0x7F] = opcode_traits::make<ld_r8_r8<&registers::a, &registers::a>>();
-			ops[0x80] = opcode_traits::make<add_r8<&registers::b>>();
-			ops[0x81] = opcode_traits::make<add_r8<&registers::c>>();
-			ops[0x82] = opcode_traits::make<add_r8<&registers::d>>();
-			ops[0x83] = opcode_traits::make<add_r8<&registers::e>>();
-			ops[0x84] = opcode_traits::make<add_r8<&registers::h>>();
-			ops[0x85] = opcode_traits::make<add_r8<&registers::l>>();
-			ops[0x86] = opcode_traits::make<add_r16P<regpair_hl>>();
-			ops[0x87] = opcode_traits::make<add_aa>();
-			ops[0x88] = opcode_traits::make<adc_r8<&registers::b>>();
-			ops[0x89] = opcode_traits::make<adc_r8<&registers::c>>();
-			ops[0x8A] = opcode_traits::make<adc_r8<&registers::d>>();
-			ops[0x8B] = opcode_traits::make<adc_r8<&registers::e>>();
-			ops[0x8C] = opcode_traits::make<adc_r8<&registers::h>>();
-			ops[0x8D] = opcode_traits::make<adc_r8<&registers::l>>();
-			ops[0x8E] = opcode_traits::make<adc_r16P<regpair_hl>>();
-			ops[0x8F] = opcode_traits::make<adc_aa>();
-			ops[0x90] = opcode_traits::make<sub_r8<&registers::b>>();
-			ops[0x91] = opcode_traits::make<sub_r8<&registers::c>>();
-			ops[0x92] = opcode_traits::make<sub_r8<&registers::d>>();
-			ops[0x93] = opcode_traits::make<sub_r8<&registers::e>>();
-			ops[0x94] = opcode_traits::make<sub_r8<&registers::h>>();
-			ops[0x95] = opcode_traits::make<sub_r8<&registers::l>>();
-			ops[0x96] = opcode_traits::make<sub_r16P<regpair_hl>>();
-			ops[0x97] = opcode_traits::make<sub_aa>();
-			ops[0x98] = opcode_traits::make<sbc_r8<&registers::b>>();
-			ops[0x99] = opcode_traits::make<sbc_r8<&registers::c>>();
-			ops[0x9A] = opcode_traits::make<sbc_r8<&registers::d>>();
-			ops[0x9B] = opcode_traits::make<sbc_r8<&registers::e>>();
-			ops[0x9C] = opcode_traits::make<sbc_r8<&registers::h>>();
-			ops[0x9D] = opcode_traits::make<sbc_r8<&registers::l>>();
-			ops[0x9E] = opcode_traits::make<sbc_r16P<regpair_hl>>();
-			ops[0x9F] = opcode_traits::make<sbc_aa>();
-			ops[0xA0] = opcode_traits::make<and_r8<&registers::b>>();
-			ops[0xA1] = opcode_traits::make<and_r8<&registers::c>>();
-			ops[0xA2] = opcode_traits::make<and_r8<&registers::d>>();
-			ops[0xA3] = opcode_traits::make<and_r8<&registers::e>>();
-			ops[0xA4] = opcode_traits::make<and_r8<&registers::h>>();
-			ops[0xA5] = opcode_traits::make<and_r8<&registers::l>>();
-			ops[0xA6] = opcode_traits::make<and_r16P<regpair_hl>>();
-			ops[0xA7] = opcode_traits::make<and_aa>();
-			ops[0xA8] = opcode_traits::make<xor_r8<&registers::b>>();
-			ops[0xA9] = opcode_traits::make<xor_r8<&registers::c>>();
-			ops[0xAA] = opcode_traits::make<xor_r8<&registers::d>>();
-			ops[0xAB] = opcode_traits::make<xor_r8<&registers::e>>();
-			ops[0xAC] = opcode_traits::make<xor_r8<&registers::h>>();
-			ops[0xAD] = opcode_traits::make<xor_r8<&registers::l>>();
-			ops[0xAE] = opcode_traits::make<xor_r16P<regpair_hl>>();
-			ops[0xAF] = opcode_traits::make<xor_aa>();
-			ops[0xB0] = opcode_traits::make<or_r8<&registers::b>>();
-			ops[0xB1] = opcode_traits::make<or_r8<&registers::c>>();
-			ops[0xB2] = opcode_traits::make<or_r8<&registers::d>>();
-			ops[0xB3] = opcode_traits::make<or_r8<&registers::e>>();
-			ops[0xB4] = opcode_traits::make<or_r8<&registers::h>>();
-			ops[0xB5] = opcode_traits::make<or_r8<&registers::l>>();
-			ops[0xB6] = opcode_traits::make<or_r16P<regpair_hl>>();
-			ops[0xB7] = opcode_traits::make<or_aa>();
-			ops[0xB8] = opcode_traits::make<cp_r8<&registers::b>>();
-			ops[0xB9] = opcode_traits::make<cp_r8<&registers::c>>();
-			ops[0xBA] = opcode_traits::make<cp_r8<&registers::d>>();
-			ops[0xBB] = opcode_traits::make<cp_r8<&registers::e>>();
-			ops[0xBC] = opcode_traits::make<cp_r8<&registers::h>>();
-			ops[0xBD] = opcode_traits::make<cp_r8<&registers::l>>();
-			ops[0xBE] = opcode_traits::make<cp_r16P<regpair_hl>>();
-			ops[0xBF] = opcode_traits::make<cp_aa>();
-			ops[0xC0] = opcode_traits::make<ret_cc<jump_condition::NZ>>();
-			ops[0xC1] = opcode_traits::make<pop_r16<regpair_bc>>();
-			ops[0xC2] = opcode_traits::make<jp_cc_n16<jump_condition::NZ>>();
-			ops[0xC3] = opcode_traits::make<jp_n16>();
-			ops[0xC4] = opcode_traits::make<call_cc_n16<jump_condition::NZ>>();
-			ops[0xC5] = opcode_traits::make<push_r16<regpair_bc>>();
-			ops[0xC6] = opcode_traits::make<add_n8>();
-			ops[0xC7] = opcode_traits::make<rst_n8<0x00>>();
-			ops[0xC8] = opcode_traits::make<ret_cc<jump_condition::Z>>();
-			ops[0xC9] = opcode_traits::make<ret>();
-			ops[0xCA] = opcode_traits::make<jp_cc_n16<jump_condition::Z>>();
-			ops[0xCB] = opcode_traits::make<prefix>();
-			ops[0xCC] = opcode_traits::make<call_cc_n16<jump_condition::Z>>();
-			ops[0xCD] = opcode_traits::make<call_n16>();
-			ops[0xCE] = opcode_traits::make<adc_n8>();
-			ops[0xCF] = opcode_traits::make<rst_n8<0x08>>();
-			ops[0xD0] = opcode_traits::make<ret_cc<jump_condition::NC>>();
-			ops[0xD1] = opcode_traits::make<pop_r16<regpair_de>>();
-			ops[0xD2] = opcode_traits::make<jp_cc_n16<jump_condition::NC>>();
-			ops[0xD3] = opcode_traits::make<illegal>();
-			ops[0xD4] = opcode_traits::make<call_cc_n16<jump_condition::NC>>();
-			ops[0xD5] = opcode_traits::make<push_r16<regpair_de>>();
-			ops[0xD6] = opcode_traits::make<sub_n8>();
-			ops[0xD7] = opcode_traits::make<rst_n8<0x10>>();
-			ops[0xD8] = opcode_traits::make<ret_cc<jump_condition::C>>();
-			ops[0xD9] = opcode_traits::make<reti>();
-			ops[0xDA] = opcode_traits::make<jp_cc_n16<jump_condition::C>>();
-			ops[0xDB] = opcode_traits::make<illegal>();
-			ops[0xDC] = opcode_traits::make<call_cc_n16<jump_condition::C>>();
-			ops[0xDD] = opcode_traits::make<illegal>();
-			ops[0xDE] = opcode_traits::make<sbc_n8>();
-			ops[0xDF] = opcode_traits::make<rst_n8<0x18>>();
-			ops[0xE0] = opcode_traits::make<ldh_n8P_r8<&registers::a>>();
-			ops[0xE1] = opcode_traits::make<pop_r16<regpair_hl>>();
-			ops[0xE2] = opcode_traits::make<ldh_r8P_r8<&registers::c, &registers::a>>();
-			ops[0xE3] = opcode_traits::make<isr<0x40>>();
-			ops[0xE4] = opcode_traits::make<isr<0x48>>();
-			ops[0xE5] = opcode_traits::make<push_r16<regpair_hl>>();
-			ops[0xE6] = opcode_traits::make<and_n8>();
-			ops[0xE7] = opcode_traits::make<rst_n8<0x20>>();
-			ops[0xE8] = opcode_traits::make<add_sp_n8>();
-			ops[0xE9] = opcode_traits::make<jp_hl>();
-			ops[0xEA] = opcode_traits::make<ld_n16P_r8<&registers::a>>();
-			ops[0xEB] = opcode_traits::make<isr<0x50>>();
-			ops[0xEC] = opcode_traits::make<isr<0x58>>();
-			ops[0xED] = opcode_traits::make<isr<0x60>>();
-			ops[0xEE] = opcode_traits::make<xor_n8>();
-			ops[0xEF] = opcode_traits::make<rst_n8<0x28>>();
-			ops[0xF0] = opcode_traits::make<ldh_r8_n8P<&registers::a>>();
-			ops[0xF1] = opcode_traits::make<pop_r16<regpair_af>>();
-			ops[0xF2] = opcode_traits::make<ldh_r8_r8P<&registers::a, &registers::c>>();
-			ops[0xF3] = opcode_traits::make<di>();
-			ops[0xF4] = opcode_traits::make<illegal>();
-			ops[0xF5] = opcode_traits::make<push_r16<regpair_af>>();
-			ops[0xF6] = opcode_traits::make<or_n8>();
-			ops[0xF7] = opcode_traits::make<rst_n8<0x30>>();
-			ops[0xF8] = opcode_traits::make<ld_hl_sp_n8>();
-			ops[0xF9] = opcode_traits::make<ld_sp_hl>();
-			ops[0xFA] = opcode_traits::make<ld_r8_n16P<&registers::a>>();
-			ops[0xFB] = opcode_traits::make<ei>();
-			ops[0xFC] = opcode_traits::make<illegal>();
-			ops[0xFD] = opcode_traits::make<illegal>();
-			ops[0xFE] = opcode_traits::make<cp_n8>();
-			ops[0xFF] = opcode_traits::make<rst_n8<0x38>>();
-			ops[0x100] = opcode_traits::make<rlc_r8<&registers::b>>();
-			ops[0x101] = opcode_traits::make<rlc_r8<&registers::c>>();
-			ops[0x102] = opcode_traits::make<rlc_r8<&registers::d>>();
-			ops[0x103] = opcode_traits::make<rlc_r8<&registers::e>>();
-			ops[0x104] = opcode_traits::make<rlc_r8<&registers::h>>();
-			ops[0x105] = opcode_traits::make<rlc_r8<&registers::l>>();
-			ops[0x106] = opcode_traits::make<rlc_r16P<regpair_hl>>();
-			ops[0x107] = opcode_traits::make<rlc_r8<&registers::a>>();
-			ops[0x108] = opcode_traits::make<rrc_r8<&registers::b>>();
-			ops[0x109] = opcode_traits::make<rrc_r8<&registers::c>>();
-			ops[0x10A] = opcode_traits::make<rrc_r8<&registers::d>>();
-			ops[0x10B] = opcode_traits::make<rrc_r8<&registers::e>>();
-			ops[0x10C] = opcode_traits::make<rrc_r8<&registers::h>>();
-			ops[0x10D] = opcode_traits::make<rrc_r8<&registers::l>>();
-			ops[0x10E] = opcode_traits::make<rrc_r16P<regpair_hl>>();
-			ops[0x10F] = opcode_traits::make<rrc_r8<&registers::a>>();
-			ops[0x110] = opcode_traits::make<rl_r8<&registers::b>>();
-			ops[0x111] = opcode_traits::make<rl_r8<&registers::c>>();
-			ops[0x112] = opcode_traits::make<rl_r8<&registers::d>>();
-			ops[0x113] = opcode_traits::make<rl_r8<&registers::e>>();
-			ops[0x114] = opcode_traits::make<rl_r8<&registers::h>>();
-			ops[0x115] = opcode_traits::make<rl_r8<&registers::l>>();
-			ops[0x116] = opcode_traits::make<rl_r16P<regpair_hl>>();
-			ops[0x117] = opcode_traits::make<rl_r8<&registers::a>>();
-			ops[0x118] = opcode_traits::make<rr_r8<&registers::b>>();
-			ops[0x119] = opcode_traits::make<rr_r8<&registers::c>>();
-			ops[0x11A] = opcode_traits::make<rr_r8<&registers::d>>();
-			ops[0x11B] = opcode_traits::make<rr_r8<&registers::e>>();
-			ops[0x11C] = opcode_traits::make<rr_r8<&registers::h>>();
-			ops[0x11D] = opcode_traits::make<rr_r8<&registers::l>>();
-			ops[0x11E] = opcode_traits::make<rr_r16P<regpair_hl>>();
-			ops[0x11F] = opcode_traits::make<rr_r8<&registers::a>>();
-			ops[0x120] = opcode_traits::make<sla_r8<&registers::b>>();
-			ops[0x121] = opcode_traits::make<sla_r8<&registers::c>>();
-			ops[0x122] = opcode_traits::make<sla_r8<&registers::d>>();
-			ops[0x123] = opcode_traits::make<sla_r8<&registers::e>>();
-			ops[0x124] = opcode_traits::make<sla_r8<&registers::h>>();
-			ops[0x125] = opcode_traits::make<sla_r8<&registers::l>>();
-			ops[0x126] = opcode_traits::make<sla_r16P<regpair_hl>>();
-			ops[0x127] = opcode_traits::make<sla_r8<&registers::a>>();
-			ops[0x128] = opcode_traits::make<sra_r8<&registers::b>>();
-			ops[0x129] = opcode_traits::make<sra_r8<&registers::c>>();
-			ops[0x12A] = opcode_traits::make<sra_r8<&registers::d>>();
-			ops[0x12B] = opcode_traits::make<sra_r8<&registers::e>>();
-			ops[0x12C] = opcode_traits::make<sra_r8<&registers::h>>();
-			ops[0x12D] = opcode_traits::make<sra_r8<&registers::l>>();
-			ops[0x12E] = opcode_traits::make<sra_r16P<regpair_hl>>();
-			ops[0x12F] = opcode_traits::make<sra_r8<&registers::a>>();
-			ops[0x130] = opcode_traits::make<swap_r8<&registers::b>>();
-			ops[0x131] = opcode_traits::make<swap_r8<&registers::c>>();
-			ops[0x132] = opcode_traits::make<swap_r8<&registers::d>>();
-			ops[0x133] = opcode_traits::make<swap_r8<&registers::e>>();
-			ops[0x134] = opcode_traits::make<swap_r8<&registers::h>>();
-			ops[0x135] = opcode_traits::make<swap_r8<&registers::l>>();
-			ops[0x136] = opcode_traits::make<swap_r16P<regpair_hl>>();
-			ops[0x137] = opcode_traits::make<swap_r8<&registers::a>>();
-			ops[0x138] = opcode_traits::make<srl_r8<&registers::b>>();
-			ops[0x139] = opcode_traits::make<srl_r8<&registers::c>>();
-			ops[0x13A] = opcode_traits::make<srl_r8<&registers::d>>();
-			ops[0x13B] = opcode_traits::make<srl_r8<&registers::e>>();
-			ops[0x13C] = opcode_traits::make<srl_r8<&registers::h>>();
-			ops[0x13D] = opcode_traits::make<srl_r8<&registers::l>>();
-			ops[0x13E] = opcode_traits::make<srl_r16P<regpair_hl>>();
-			ops[0x13F] = opcode_traits::make<srl_r8<&registers::a>>();
-			ops[0x140] = opcode_traits::make<bit_r8<0, &registers::b>>();
-			ops[0x141] = opcode_traits::make<bit_r8<0, &registers::c>>();
-			ops[0x142] = opcode_traits::make<bit_r8<0, &registers::d>>();
-			ops[0x143] = opcode_traits::make<bit_r8<0, &registers::e>>();
-			ops[0x144] = opcode_traits::make<bit_r8<0, &registers::h>>();
-			ops[0x145] = opcode_traits::make<bit_r8<0, &registers::l>>();
-			ops[0x146] = opcode_traits::make<bit_r16P<0, regpair_hl>>();
-			ops[0x147] = opcode_traits::make<bit_r8<0, &registers::a>>();
-			ops[0x148] = opcode_traits::make<bit_r8<1, &registers::b>>();
-			ops[0x149] = opcode_traits::make<bit_r8<1, &registers::c>>();
-			ops[0x14A] = opcode_traits::make<bit_r8<1, &registers::d>>();
-			ops[0x14B] = opcode_traits::make<bit_r8<1, &registers::e>>();
-			ops[0x14C] = opcode_traits::make<bit_r8<1, &registers::h>>();
-			ops[0x14D] = opcode_traits::make<bit_r8<1, &registers::l>>();
-			ops[0x14E] = opcode_traits::make<bit_r16P<1, regpair_hl>>();
-			ops[0x14F] = opcode_traits::make<bit_r8<1, &registers::a>>();
-			ops[0x150] = opcode_traits::make<bit_r8<2, &registers::b>>();
-			ops[0x151] = opcode_traits::make<bit_r8<2, &registers::c>>();
-			ops[0x152] = opcode_traits::make<bit_r8<2, &registers::d>>();
-			ops[0x153] = opcode_traits::make<bit_r8<2, &registers::e>>();
-			ops[0x154] = opcode_traits::make<bit_r8<2, &registers::h>>();
-			ops[0x155] = opcode_traits::make<bit_r8<2, &registers::l>>();
-			ops[0x156] = opcode_traits::make<bit_r16P<2, regpair_hl>>();
-			ops[0x157] = opcode_traits::make<bit_r8<2, &registers::a>>();
-			ops[0x158] = opcode_traits::make<bit_r8<3, &registers::b>>();
-			ops[0x159] = opcode_traits::make<bit_r8<3, &registers::c>>();
-			ops[0x15A] = opcode_traits::make<bit_r8<3, &registers::d>>();
-			ops[0x15B] = opcode_traits::make<bit_r8<3, &registers::e>>();
-			ops[0x15C] = opcode_traits::make<bit_r8<3, &registers::h>>();
-			ops[0x15D] = opcode_traits::make<bit_r8<3, &registers::l>>();
-			ops[0x15E] = opcode_traits::make<bit_r16P<3, regpair_hl>>();
-			ops[0x15F] = opcode_traits::make<bit_r8<3, &registers::a>>();
-			ops[0x160] = opcode_traits::make<bit_r8<4, &registers::b>>();
-			ops[0x161] = opcode_traits::make<bit_r8<4, &registers::c>>();
-			ops[0x162] = opcode_traits::make<bit_r8<4, &registers::d>>();
-			ops[0x163] = opcode_traits::make<bit_r8<4, &registers::e>>();
-			ops[0x164] = opcode_traits::make<bit_r8<4, &registers::h>>();
-			ops[0x165] = opcode_traits::make<bit_r8<4, &registers::l>>();
-			ops[0x166] = opcode_traits::make<bit_r16P<4, regpair_hl>>();
-			ops[0x167] = opcode_traits::make<bit_r8<4, &registers::a>>();
-			ops[0x168] = opcode_traits::make<bit_r8<5, &registers::b>>();
-			ops[0x169] = opcode_traits::make<bit_r8<5, &registers::c>>();
-			ops[0x16A] = opcode_traits::make<bit_r8<5, &registers::d>>();
-			ops[0x16B] = opcode_traits::make<bit_r8<5, &registers::e>>();
-			ops[0x16C] = opcode_traits::make<bit_r8<5, &registers::h>>();
-			ops[0x16D] = opcode_traits::make<bit_r8<5, &registers::l>>();
-			ops[0x16E] = opcode_traits::make<bit_r16P<5, regpair_hl>>();
-			ops[0x16F] = opcode_traits::make<bit_r8<5, &registers::a>>();
-			ops[0x170] = opcode_traits::make<bit_r8<6, &registers::b>>();
-			ops[0x171] = opcode_traits::make<bit_r8<6, &registers::c>>();
-			ops[0x172] = opcode_traits::make<bit_r8<6, &registers::d>>();
-			ops[0x173] = opcode_traits::make<bit_r8<6, &registers::e>>();
-			ops[0x174] = opcode_traits::make<bit_r8<6, &registers::h>>();
-			ops[0x175] = opcode_traits::make<bit_r8<6, &registers::l>>();
-			ops[0x176] = opcode_traits::make<bit_r16P<6, regpair_hl>>();
-			ops[0x177] = opcode_traits::make<bit_r8<6, &registers::a>>();
-			ops[0x178] = opcode_traits::make<bit_r8<7, &registers::b>>();
-			ops[0x179] = opcode_traits::make<bit_r8<7, &registers::c>>();
-			ops[0x17A] = opcode_traits::make<bit_r8<7, &registers::d>>();
-			ops[0x17B] = opcode_traits::make<bit_r8<7, &registers::e>>();
-			ops[0x17C] = opcode_traits::make<bit_r8<7, &registers::h>>();
-			ops[0x17D] = opcode_traits::make<bit_r8<7, &registers::l>>();
-			ops[0x17E] = opcode_traits::make<bit_r16P<7, regpair_hl>>();
-			ops[0x17F] = opcode_traits::make<bit_r8<7, &registers::a>>();
-			ops[0x180] = opcode_traits::make<res_r8<0, &registers::b>>();
-			ops[0x181] = opcode_traits::make<res_r8<0, &registers::c>>();
-			ops[0x182] = opcode_traits::make<res_r8<0, &registers::d>>();
-			ops[0x183] = opcode_traits::make<res_r8<0, &registers::e>>();
-			ops[0x184] = opcode_traits::make<res_r8<0, &registers::h>>();
-			ops[0x185] = opcode_traits::make<res_r8<0, &registers::l>>();
-			ops[0x186] = opcode_traits::make<res_r16P<0, regpair_hl>>();
-			ops[0x187] = opcode_traits::make<res_r8<0, &registers::a>>();
-			ops[0x188] = opcode_traits::make<res_r8<1, &registers::b>>();
-			ops[0x189] = opcode_traits::make<res_r8<1, &registers::c>>();
-			ops[0x18A] = opcode_traits::make<res_r8<1, &registers::d>>();
-			ops[0x18B] = opcode_traits::make<res_r8<1, &registers::e>>();
-			ops[0x18C] = opcode_traits::make<res_r8<1, &registers::h>>();
-			ops[0x18D] = opcode_traits::make<res_r8<1, &registers::l>>();
-			ops[0x18E] = opcode_traits::make<res_r16P<1, regpair_hl>>();
-			ops[0x18F] = opcode_traits::make<res_r8<1, &registers::a>>();
-			ops[0x190] = opcode_traits::make<res_r8<2, &registers::b>>();
-			ops[0x191] = opcode_traits::make<res_r8<2, &registers::c>>();
-			ops[0x192] = opcode_traits::make<res_r8<2, &registers::d>>();
-			ops[0x193] = opcode_traits::make<res_r8<2, &registers::e>>();
-			ops[0x194] = opcode_traits::make<res_r8<2, &registers::h>>();
-			ops[0x195] = opcode_traits::make<res_r8<2, &registers::l>>();
-			ops[0x196] = opcode_traits::make<res_r16P<2, regpair_hl>>();
-			ops[0x197] = opcode_traits::make<res_r8<2, &registers::a>>();
-			ops[0x198] = opcode_traits::make<res_r8<3, &registers::b>>();
-			ops[0x199] = opcode_traits::make<res_r8<3, &registers::c>>();
-			ops[0x19A] = opcode_traits::make<res_r8<3, &registers::d>>();
-			ops[0x19B] = opcode_traits::make<res_r8<3, &registers::e>>();
-			ops[0x19C] = opcode_traits::make<res_r8<3, &registers::h>>();
-			ops[0x19D] = opcode_traits::make<res_r8<3, &registers::l>>();
-			ops[0x19E] = opcode_traits::make<res_r16P<3, regpair_hl>>();
-			ops[0x19F] = opcode_traits::make<res_r8<3, &registers::a>>();
-			ops[0x1A0] = opcode_traits::make<res_r8<4, &registers::b>>();
-			ops[0x1A1] = opcode_traits::make<res_r8<4, &registers::c>>();
-			ops[0x1A2] = opcode_traits::make<res_r8<4, &registers::d>>();
-			ops[0x1A3] = opcode_traits::make<res_r8<4, &registers::e>>();
-			ops[0x1A4] = opcode_traits::make<res_r8<4, &registers::h>>();
-			ops[0x1A5] = opcode_traits::make<res_r8<4, &registers::l>>();
-			ops[0x1A6] = opcode_traits::make<res_r16P<4, regpair_hl>>();
-			ops[0x1A7] = opcode_traits::make<res_r8<4, &registers::a>>();
-			ops[0x1A8] = opcode_traits::make<res_r8<5, &registers::b>>();
-			ops[0x1A9] = opcode_traits::make<res_r8<5, &registers::c>>();
-			ops[0x1AA] = opcode_traits::make<res_r8<5, &registers::d>>();
-			ops[0x1AB] = opcode_traits::make<res_r8<5, &registers::e>>();
-			ops[0x1AC] = opcode_traits::make<res_r8<5, &registers::h>>();
-			ops[0x1AD] = opcode_traits::make<res_r8<5, &registers::l>>();
-			ops[0x1AE] = opcode_traits::make<res_r16P<5, regpair_hl>>();
-			ops[0x1AF] = opcode_traits::make<res_r8<5, &registers::a>>();
-			ops[0x1B0] = opcode_traits::make<res_r8<6, &registers::b>>();
-			ops[0x1B1] = opcode_traits::make<res_r8<6, &registers::c>>();
-			ops[0x1B2] = opcode_traits::make<res_r8<6, &registers::d>>();
-			ops[0x1B3] = opcode_traits::make<res_r8<6, &registers::e>>();
-			ops[0x1B4] = opcode_traits::make<res_r8<6, &registers::h>>();
-			ops[0x1B5] = opcode_traits::make<res_r8<6, &registers::l>>();
-			ops[0x1B6] = opcode_traits::make<res_r16P<6, regpair_hl>>();
-			ops[0x1B7] = opcode_traits::make<res_r8<6, &registers::a>>();
-			ops[0x1B8] = opcode_traits::make<res_r8<7, &registers::b>>();
-			ops[0x1B9] = opcode_traits::make<res_r8<7, &registers::c>>();
-			ops[0x1BA] = opcode_traits::make<res_r8<7, &registers::d>>();
-			ops[0x1BB] = opcode_traits::make<res_r8<7, &registers::e>>();
-			ops[0x1BC] = opcode_traits::make<res_r8<7, &registers::h>>();
-			ops[0x1BD] = opcode_traits::make<res_r8<7, &registers::l>>();
-			ops[0x1BE] = opcode_traits::make<res_r16P<7, regpair_hl>>();
-			ops[0x1BF] = opcode_traits::make<res_r8<7, &registers::a>>();
-			ops[0x1C0] = opcode_traits::make<set_r8<0, &registers::b>>();
-			ops[0x1C1] = opcode_traits::make<set_r8<0, &registers::c>>();
-			ops[0x1C2] = opcode_traits::make<set_r8<0, &registers::d>>();
-			ops[0x1C3] = opcode_traits::make<set_r8<0, &registers::e>>();
-			ops[0x1C4] = opcode_traits::make<set_r8<0, &registers::h>>();
-			ops[0x1C5] = opcode_traits::make<set_r8<0, &registers::l>>();
-			ops[0x1C6] = opcode_traits::make<set_r16P<0, regpair_hl>>();
-			ops[0x1C7] = opcode_traits::make<set_r8<0, &registers::a>>();
-			ops[0x1C8] = opcode_traits::make<set_r8<1, &registers::b>>();
-			ops[0x1C9] = opcode_traits::make<set_r8<1, &registers::c>>();
-			ops[0x1CA] = opcode_traits::make<set_r8<1, &registers::d>>();
-			ops[0x1CB] = opcode_traits::make<set_r8<1, &registers::e>>();
-			ops[0x1CC] = opcode_traits::make<set_r8<1, &registers::h>>();
-			ops[0x1CD] = opcode_traits::make<set_r8<1, &registers::l>>();
-			ops[0x1CE] = opcode_traits::make<set_r16P<1, regpair_hl>>();
-			ops[0x1CF] = opcode_traits::make<set_r8<1, &registers::a>>();
-			ops[0x1D0] = opcode_traits::make<set_r8<2, &registers::b>>();
-			ops[0x1D1] = opcode_traits::make<set_r8<2, &registers::c>>();
-			ops[0x1D2] = opcode_traits::make<set_r8<2, &registers::d>>();
-			ops[0x1D3] = opcode_traits::make<set_r8<2, &registers::e>>();
-			ops[0x1D4] = opcode_traits::make<set_r8<2, &registers::h>>();
-			ops[0x1D5] = opcode_traits::make<set_r8<2, &registers::l>>();
-			ops[0x1D6] = opcode_traits::make<set_r16P<2, regpair_hl>>();
-			ops[0x1D7] = opcode_traits::make<set_r8<2, &registers::a>>();
-			ops[0x1D8] = opcode_traits::make<set_r8<3, &registers::b>>();
-			ops[0x1D9] = opcode_traits::make<set_r8<3, &registers::c>>();
-			ops[0x1DA] = opcode_traits::make<set_r8<3, &registers::d>>();
-			ops[0x1DB] = opcode_traits::make<set_r8<3, &registers::e>>();
-			ops[0x1DC] = opcode_traits::make<set_r8<3, &registers::h>>();
-			ops[0x1DD] = opcode_traits::make<set_r8<3, &registers::l>>();
-			ops[0x1DE] = opcode_traits::make<set_r16P<3, regpair_hl>>();
-			ops[0x1DF] = opcode_traits::make<set_r8<3, &registers::a>>();
-			ops[0x1E0] = opcode_traits::make<set_r8<4, &registers::b>>();
-			ops[0x1E1] = opcode_traits::make<set_r8<4, &registers::c>>();
-			ops[0x1E2] = opcode_traits::make<set_r8<4, &registers::d>>();
-			ops[0x1E3] = opcode_traits::make<set_r8<4, &registers::e>>();
-			ops[0x1E4] = opcode_traits::make<set_r8<4, &registers::h>>();
-			ops[0x1E5] = opcode_traits::make<set_r8<4, &registers::l>>();
-			ops[0x1E6] = opcode_traits::make<set_r16P<4, regpair_hl>>();
-			ops[0x1E7] = opcode_traits::make<set_r8<4, &registers::a>>();
-			ops[0x1E8] = opcode_traits::make<set_r8<5, &registers::b>>();
-			ops[0x1E9] = opcode_traits::make<set_r8<5, &registers::c>>();
-			ops[0x1EA] = opcode_traits::make<set_r8<5, &registers::d>>();
-			ops[0x1EB] = opcode_traits::make<set_r8<5, &registers::e>>();
-			ops[0x1EC] = opcode_traits::make<set_r8<5, &registers::h>>();
-			ops[0x1ED] = opcode_traits::make<set_r8<5, &registers::l>>();
-			ops[0x1EE] = opcode_traits::make<set_r16P<5, regpair_hl>>();
-			ops[0x1EF] = opcode_traits::make<set_r8<5, &registers::a>>();
-			ops[0x1F0] = opcode_traits::make<set_r8<6, &registers::b>>();
-			ops[0x1F1] = opcode_traits::make<set_r8<6, &registers::c>>();
-			ops[0x1F2] = opcode_traits::make<set_r8<6, &registers::d>>();
-			ops[0x1F3] = opcode_traits::make<set_r8<6, &registers::e>>();
-			ops[0x1F4] = opcode_traits::make<set_r8<6, &registers::h>>();
-			ops[0x1F5] = opcode_traits::make<set_r8<6, &registers::l>>();
-			ops[0x1F6] = opcode_traits::make<set_r16P<6, regpair_hl>>();
-			ops[0x1F7] = opcode_traits::make<set_r8<6, &registers::a>>();
-			ops[0x1F8] = opcode_traits::make<set_r8<7, &registers::b>>();
-			ops[0x1F9] = opcode_traits::make<set_r8<7, &registers::c>>();
-			ops[0x1FA] = opcode_traits::make<set_r8<7, &registers::d>>();
-			ops[0x1FB] = opcode_traits::make<set_r8<7, &registers::e>>();
-			ops[0x1FC] = opcode_traits::make<set_r8<7, &registers::h>>();
-			ops[0x1FD] = opcode_traits::make<set_r8<7, &registers::l>>();
-			ops[0x1FE] = opcode_traits::make<set_r16P<7, regpair_hl>>();
-			ops[0x1FF] = opcode_traits::make<set_r8<7, &registers::a>>();
-
-			return ops;
-		}();
+		template<typename MemProvider>
+		constexpr const std::array<opcode_traits<MemProvider>, 512>& map();
 
 		namespace common {
-			constexpr next_stage_t prefetch(OPCODE_ARGS) noexcept {
+			template<typename MemProvider>
+			constexpr next_stage_t<MemProvider> prefetch(OPCODE_ARGS) noexcept {
 				reg.ir = mem->read(reg.pc);
 				reg.pc++;
-				return fetch_opcode(reg, mem);
+				return fetch_opcode<MemProvider>(reg, mem);
 			}
 
-			constexpr next_stage_t prefetch_and_reset(OPCODE_ARGS) noexcept {
+			template<typename MemProvider>
+			constexpr next_stage_t<MemProvider> prefetch_and_reset(OPCODE_ARGS) noexcept {
 				reg.mupc = 0;
-				return prefetch(reg, mem);
+				return prefetch<MemProvider>(reg, mem);
 			}
 
-			constexpr next_stage_t fetch_opcode(OPCODE_ARGS) noexcept {
-				return opcodes::map[reg.ir].entry;
+			template<typename MemProvider>
+			constexpr next_stage_t<MemProvider> fetch_opcode(OPCODE_ARGS) noexcept {
+				return opcodes::map<MemProvider>()[reg.ir].entry;
 			}
 		}
+
+		template<typename MemProvider>
+		constexpr const std::array<opcode_traits<MemProvider>, 512>& map() {
+			constexpr static std::array<opcode_traits<MemProvider>, 512> ops = []() constexpr {
+				std::array<opcode_traits<MemProvider>, 512> ops{};
+
+				using traits_t = opcode_traits<MemProvider>;
+
+				#define MAKE_TRAITS_SIMPLE(name) traits_t::template make<name<MemProvider>>()
+				#define MAKE_TRAITS(name, ...) traits_t::template make<name<MemProvider, __VA_ARGS__>>()
+
+				ops[0x00] = MAKE_TRAITS_SIMPLE(nop);
+				ops[0x01] = MAKE_TRAITS(ld_r16_n16, regpair_bc);
+				ops[0x02] = MAKE_TRAITS(ld_r16P_r8, regpair_bc, &registers::a);
+				ops[0x03] = MAKE_TRAITS(inc_r16, regpair_bc);
+				ops[0x04] = MAKE_TRAITS(inc_r8, &registers::b);
+				ops[0x05] = MAKE_TRAITS(dec_r8, &registers::b);
+				ops[0x06] = MAKE_TRAITS(ld_r8_n8, &registers::b);
+				ops[0x07] = MAKE_TRAITS_SIMPLE(rlca);
+				ops[0x08] = MAKE_TRAITS(ld_n16P_r16, &registers::sp);
+				ops[0x09] = MAKE_TRAITS(add_r16_r16, regpair_hl, regpair_bc);
+				ops[0x0A] = MAKE_TRAITS(ld_r8_r16P, &registers::a, regpair_bc);
+				ops[0x0B] = MAKE_TRAITS(dec_r16, regpair_bc);
+				ops[0x0C] = MAKE_TRAITS(inc_r8, &registers::c);
+				ops[0x0D] = MAKE_TRAITS(dec_r8, &registers::c);
+				ops[0x0E] = MAKE_TRAITS(ld_r8_n8, &registers::c);
+				ops[0x0F] = MAKE_TRAITS_SIMPLE(rrca);
+				ops[0x10] = MAKE_TRAITS_SIMPLE(stop_n8);
+				ops[0x11] = MAKE_TRAITS(ld_r16_n16, regpair_de);
+				ops[0x12] = MAKE_TRAITS(ld_r16P_r8, regpair_de, &registers::a);
+				ops[0x13] = MAKE_TRAITS(inc_r16, regpair_de);
+				ops[0x14] = MAKE_TRAITS(inc_r8, &registers::d);
+				ops[0x15] = MAKE_TRAITS(dec_r8, &registers::d);
+				ops[0x16] = MAKE_TRAITS(ld_r8_n8, &registers::d);
+				ops[0x17] = MAKE_TRAITS_SIMPLE(rla);
+				ops[0x18] = MAKE_TRAITS_SIMPLE(jr_n8);
+				ops[0x19] = MAKE_TRAITS(add_r16_r16, regpair_hl, regpair_de);
+				ops[0x1A] = MAKE_TRAITS(ld_r8_r16P, &registers::a, regpair_de);
+				ops[0x1B] = MAKE_TRAITS(dec_r16, regpair_de);
+				ops[0x1C] = MAKE_TRAITS(inc_r8, &registers::e);
+				ops[0x1D] = MAKE_TRAITS(dec_r8, &registers::e);
+				ops[0x1E] = MAKE_TRAITS(ld_r8_n8, &registers::e);
+				ops[0x1F] = MAKE_TRAITS_SIMPLE(rra);
+				ops[0x20] = MAKE_TRAITS(jr_cc_n8, jump_condition::NZ);
+				ops[0x21] = MAKE_TRAITS(ld_r16_n16, regpair_hl);
+				ops[0x22] = MAKE_TRAITS(ld_r16PI_r8, regpair_hl, &registers::a);
+				ops[0x23] = MAKE_TRAITS(inc_r16, regpair_hl);
+				ops[0x24] = MAKE_TRAITS(inc_r8, &registers::h);
+				ops[0x25] = MAKE_TRAITS(dec_r8, &registers::h);
+				ops[0x26] = MAKE_TRAITS(ld_r8_n8, &registers::h);
+				ops[0x27] = MAKE_TRAITS_SIMPLE(daa);
+				ops[0x28] = MAKE_TRAITS(jr_cc_n8, jump_condition::Z);
+				ops[0x29] = MAKE_TRAITS(add_r16_r16, regpair_hl, regpair_hl);
+				ops[0x2A] = MAKE_TRAITS_SIMPLE(ld_a_hlp);
+				ops[0x2B] = MAKE_TRAITS(dec_r16, regpair_hl);
+				ops[0x2C] = MAKE_TRAITS(inc_r8, &registers::l);
+				ops[0x2D] = MAKE_TRAITS(dec_r8, &registers::l);
+				ops[0x2E] = MAKE_TRAITS(ld_r8_n8, &registers::l);
+				ops[0x2F] = MAKE_TRAITS_SIMPLE(cpl);
+				ops[0x30] = MAKE_TRAITS(jr_cc_n8, jump_condition::NC);
+				ops[0x31] = MAKE_TRAITS_SIMPLE(ld_sp_n16);
+				ops[0x32] = MAKE_TRAITS(ld_r16PD_r8, regpair_hl, &registers::a);
+				ops[0x33] = MAKE_TRAITS_SIMPLE(inc_sp);
+				ops[0x34] = MAKE_TRAITS(inc_r16P, regpair_hl);
+				ops[0x35] = MAKE_TRAITS(dec_r16P, regpair_hl);
+				ops[0x36] = MAKE_TRAITS(ld_r16P_n8, regpair_hl);
+				ops[0x37] = MAKE_TRAITS_SIMPLE(scf);
+				ops[0x38] = MAKE_TRAITS(jr_cc_n8, jump_condition::C);
+				ops[0x39] = MAKE_TRAITS_SIMPLE(add_hl_sp);
+				ops[0x3A] = MAKE_TRAITS(ld_r8_r16PD, &registers::a, regpair_hl);
+				ops[0x3B] = MAKE_TRAITS_SIMPLE(dec_sp);
+				ops[0x3C] = MAKE_TRAITS(inc_r8, &registers::a);
+				ops[0x3D] = MAKE_TRAITS(dec_r8, &registers::a);
+				ops[0x3E] = MAKE_TRAITS(ld_r8_n8, &registers::a);
+				ops[0x3F] = MAKE_TRAITS_SIMPLE(ccf);
+				ops[0x40] = MAKE_TRAITS(ld_r8_r8, &registers::b, &registers::b);
+				ops[0x41] = MAKE_TRAITS(ld_r8_r8, &registers::b, &registers::c);
+				ops[0x42] = MAKE_TRAITS(ld_r8_r8, &registers::b, &registers::d);
+				ops[0x43] = MAKE_TRAITS(ld_r8_r8, &registers::b, &registers::e);
+				ops[0x44] = MAKE_TRAITS(ld_r8_r8, &registers::b, &registers::h);
+				ops[0x45] = MAKE_TRAITS(ld_r8_r8, &registers::b, &registers::l);
+				ops[0x46] = MAKE_TRAITS(ld_r8_r16P, &registers::b, regpair_hl);
+				ops[0x47] = MAKE_TRAITS(ld_r8_r8, &registers::b, &registers::a);
+				ops[0x48] = MAKE_TRAITS(ld_r8_r8, &registers::c, &registers::b);
+				ops[0x49] = MAKE_TRAITS(ld_r8_r8, &registers::c, &registers::c);
+				ops[0x4A] = MAKE_TRAITS(ld_r8_r8, &registers::c, &registers::d);
+				ops[0x4B] = MAKE_TRAITS(ld_r8_r8, &registers::c, &registers::e);
+				ops[0x4C] = MAKE_TRAITS(ld_r8_r8, &registers::c, &registers::h);
+				ops[0x4D] = MAKE_TRAITS(ld_r8_r8, &registers::c, &registers::l);
+				ops[0x4E] = MAKE_TRAITS(ld_r8_r16P, &registers::c, regpair_hl);
+				ops[0x4F] = MAKE_TRAITS(ld_r8_r8, &registers::c, &registers::a);
+				ops[0x50] = MAKE_TRAITS(ld_r8_r8, &registers::d, &registers::b);
+				ops[0x51] = MAKE_TRAITS(ld_r8_r8, &registers::d, &registers::c);
+				ops[0x52] = MAKE_TRAITS(ld_r8_r8, &registers::d, &registers::d);
+				ops[0x53] = MAKE_TRAITS(ld_r8_r8, &registers::d, &registers::e);
+				ops[0x54] = MAKE_TRAITS(ld_r8_r8, &registers::d, &registers::h);
+				ops[0x55] = MAKE_TRAITS(ld_r8_r8, &registers::d, &registers::l);
+				ops[0x56] = MAKE_TRAITS(ld_r8_r16P, &registers::d, regpair_hl);
+				ops[0x57] = MAKE_TRAITS(ld_r8_r8, &registers::d, &registers::a);
+				ops[0x58] = MAKE_TRAITS(ld_r8_r8, &registers::e, &registers::b);
+				ops[0x59] = MAKE_TRAITS(ld_r8_r8, &registers::e, &registers::c);
+				ops[0x5A] = MAKE_TRAITS(ld_r8_r8, &registers::e, &registers::d);
+				ops[0x5B] = MAKE_TRAITS(ld_r8_r8, &registers::e, &registers::e);
+				ops[0x5C] = MAKE_TRAITS(ld_r8_r8, &registers::e, &registers::h);
+				ops[0x5D] = MAKE_TRAITS(ld_r8_r8, &registers::e, &registers::l);
+				ops[0x5E] = MAKE_TRAITS(ld_r8_r16P, &registers::e, regpair_hl);
+				ops[0x5F] = MAKE_TRAITS(ld_r8_r8, &registers::e, &registers::a);
+				ops[0x60] = MAKE_TRAITS(ld_r8_r8, &registers::h, &registers::b);
+				ops[0x61] = MAKE_TRAITS(ld_r8_r8, &registers::h, &registers::c);
+				ops[0x62] = MAKE_TRAITS(ld_r8_r8, &registers::h, &registers::d);
+				ops[0x63] = MAKE_TRAITS(ld_r8_r8, &registers::h, &registers::e);
+				ops[0x64] = MAKE_TRAITS(ld_r8_r8, &registers::h, &registers::h);
+				ops[0x65] = MAKE_TRAITS(ld_r8_r8, &registers::h, &registers::l);
+				ops[0x66] = MAKE_TRAITS(ld_r8_r16P, &registers::h, regpair_hl);
+				ops[0x67] = MAKE_TRAITS(ld_r8_r8, &registers::h, &registers::a);
+				ops[0x68] = MAKE_TRAITS(ld_r8_r8, &registers::l, &registers::b);
+				ops[0x69] = MAKE_TRAITS(ld_r8_r8, &registers::l, &registers::c);
+				ops[0x6A] = MAKE_TRAITS(ld_r8_r8, &registers::l, &registers::d);
+				ops[0x6B] = MAKE_TRAITS(ld_r8_r8, &registers::l, &registers::e);
+				ops[0x6C] = MAKE_TRAITS(ld_r8_r8, &registers::l, &registers::h);
+				ops[0x6D] = MAKE_TRAITS(ld_r8_r8, &registers::l, &registers::l);
+				ops[0x6E] = MAKE_TRAITS(ld_r8_r16P, &registers::l, regpair_hl);
+				ops[0x6F] = MAKE_TRAITS(ld_r8_r8, &registers::l, &registers::a);
+				ops[0x70] = MAKE_TRAITS(ld_r16P_r8, regpair_hl, &registers::b);
+				ops[0x71] = MAKE_TRAITS(ld_r16P_r8, regpair_hl, &registers::c);
+				ops[0x72] = MAKE_TRAITS(ld_r16P_r8, regpair_hl, &registers::d);
+				ops[0x73] = MAKE_TRAITS(ld_r16P_r8, regpair_hl, &registers::e);
+				ops[0x74] = MAKE_TRAITS(ld_r16P_r8, regpair_hl, &registers::h);
+				ops[0x75] = MAKE_TRAITS(ld_r16P_r8, regpair_hl, &registers::l);
+				ops[0x76] = MAKE_TRAITS_SIMPLE(halt);
+				ops[0x77] = MAKE_TRAITS(ld_r16P_r8, regpair_hl, &registers::a);
+				ops[0x78] = MAKE_TRAITS(ld_r8_r8, &registers::a, &registers::b);
+				ops[0x79] = MAKE_TRAITS(ld_r8_r8, &registers::a, &registers::c);
+				ops[0x7A] = MAKE_TRAITS(ld_r8_r8, &registers::a, &registers::d);
+				ops[0x7B] = MAKE_TRAITS(ld_r8_r8, &registers::a, &registers::e);
+				ops[0x7C] = MAKE_TRAITS(ld_r8_r8, &registers::a, &registers::h);
+				ops[0x7D] = MAKE_TRAITS(ld_r8_r8, &registers::a, &registers::l);
+				ops[0x7E] = MAKE_TRAITS(ld_r8_r16P, &registers::a, regpair_hl);
+				ops[0x7F] = MAKE_TRAITS(ld_r8_r8, &registers::a, &registers::a);
+				ops[0x80] = MAKE_TRAITS(add_r8, &registers::b);
+				ops[0x81] = MAKE_TRAITS(add_r8, &registers::c);
+				ops[0x82] = MAKE_TRAITS(add_r8, &registers::d);
+				ops[0x83] = MAKE_TRAITS(add_r8, &registers::e);
+				ops[0x84] = MAKE_TRAITS(add_r8, &registers::h);
+				ops[0x85] = MAKE_TRAITS(add_r8, &registers::l);
+				ops[0x86] = MAKE_TRAITS(add_r16P, regpair_hl);
+				ops[0x87] = MAKE_TRAITS_SIMPLE(add_aa);
+				ops[0x88] = MAKE_TRAITS(adc_r8, &registers::b);
+				ops[0x89] = MAKE_TRAITS(adc_r8, &registers::c);
+				ops[0x8A] = MAKE_TRAITS(adc_r8, &registers::d);
+				ops[0x8B] = MAKE_TRAITS(adc_r8, &registers::e);
+				ops[0x8C] = MAKE_TRAITS(adc_r8, &registers::h);
+				ops[0x8D] = MAKE_TRAITS(adc_r8, &registers::l);
+				ops[0x8E] = MAKE_TRAITS(adc_r16P, regpair_hl);
+				ops[0x8F] = MAKE_TRAITS_SIMPLE(adc_aa);
+				ops[0x90] = MAKE_TRAITS(sub_r8, &registers::b);
+				ops[0x91] = MAKE_TRAITS(sub_r8, &registers::c);
+				ops[0x92] = MAKE_TRAITS(sub_r8, &registers::d);
+				ops[0x93] = MAKE_TRAITS(sub_r8, &registers::e);
+				ops[0x94] = MAKE_TRAITS(sub_r8, &registers::h);
+				ops[0x95] = MAKE_TRAITS(sub_r8, &registers::l);
+				ops[0x96] = MAKE_TRAITS(sub_r16P, regpair_hl);
+				ops[0x97] = MAKE_TRAITS_SIMPLE(sub_aa);
+				ops[0x98] = MAKE_TRAITS(sbc_r8, &registers::b);
+				ops[0x99] = MAKE_TRAITS(sbc_r8, &registers::c);
+				ops[0x9A] = MAKE_TRAITS(sbc_r8, &registers::d);
+				ops[0x9B] = MAKE_TRAITS(sbc_r8, &registers::e);
+				ops[0x9C] = MAKE_TRAITS(sbc_r8, &registers::h);
+				ops[0x9D] = MAKE_TRAITS(sbc_r8, &registers::l);
+				ops[0x9E] = MAKE_TRAITS(sbc_r16P, regpair_hl);
+				ops[0x9F] = MAKE_TRAITS_SIMPLE(sbc_aa);
+				ops[0xA0] = MAKE_TRAITS(and_r8, &registers::b);
+				ops[0xA1] = MAKE_TRAITS(and_r8, &registers::c);
+				ops[0xA2] = MAKE_TRAITS(and_r8, &registers::d);
+				ops[0xA3] = MAKE_TRAITS(and_r8, &registers::e);
+				ops[0xA4] = MAKE_TRAITS(and_r8, &registers::h);
+				ops[0xA5] = MAKE_TRAITS(and_r8, &registers::l);
+				ops[0xA6] = MAKE_TRAITS(and_r16P, regpair_hl);
+				ops[0xA7] = MAKE_TRAITS_SIMPLE(and_aa);
+				ops[0xA8] = MAKE_TRAITS(xor_r8, &registers::b);
+				ops[0xA9] = MAKE_TRAITS(xor_r8, &registers::c);
+				ops[0xAA] = MAKE_TRAITS(xor_r8, &registers::d);
+				ops[0xAB] = MAKE_TRAITS(xor_r8, &registers::e);
+				ops[0xAC] = MAKE_TRAITS(xor_r8, &registers::h);
+				ops[0xAD] = MAKE_TRAITS(xor_r8, &registers::l);
+				ops[0xAE] = MAKE_TRAITS(xor_r16P, regpair_hl);
+				ops[0xAF] = MAKE_TRAITS_SIMPLE(xor_aa);
+				ops[0xB0] = MAKE_TRAITS(or_r8, &registers::b);
+				ops[0xB1] = MAKE_TRAITS(or_r8, &registers::c);
+				ops[0xB2] = MAKE_TRAITS(or_r8, &registers::d);
+				ops[0xB3] = MAKE_TRAITS(or_r8, &registers::e);
+				ops[0xB4] = MAKE_TRAITS(or_r8, &registers::h);
+				ops[0xB5] = MAKE_TRAITS(or_r8, &registers::l);
+				ops[0xB6] = MAKE_TRAITS(or_r16P, regpair_hl);
+				ops[0xB7] = MAKE_TRAITS_SIMPLE(or_aa);
+				ops[0xB8] = MAKE_TRAITS(cp_r8, &registers::b);
+				ops[0xB9] = MAKE_TRAITS(cp_r8, &registers::c);
+				ops[0xBA] = MAKE_TRAITS(cp_r8, &registers::d);
+				ops[0xBB] = MAKE_TRAITS(cp_r8, &registers::e);
+				ops[0xBC] = MAKE_TRAITS(cp_r8, &registers::h);
+				ops[0xBD] = MAKE_TRAITS(cp_r8, &registers::l);
+				ops[0xBE] = MAKE_TRAITS(cp_r16P, regpair_hl);
+				ops[0xBF] = MAKE_TRAITS_SIMPLE(cp_aa);
+				ops[0xC0] = MAKE_TRAITS(ret_cc, jump_condition::NZ);
+				ops[0xC1] = MAKE_TRAITS(pop_r16, regpair_bc);
+				ops[0xC2] = MAKE_TRAITS(jp_cc_n16, jump_condition::NZ);
+				ops[0xC3] = MAKE_TRAITS_SIMPLE(jp_n16);
+				ops[0xC4] = MAKE_TRAITS(call_cc_n16, jump_condition::NZ);
+				ops[0xC5] = MAKE_TRAITS(push_r16, regpair_bc);
+				ops[0xC6] = MAKE_TRAITS_SIMPLE(add_n8);
+				ops[0xC7] = MAKE_TRAITS(rst_n8, 0x00);
+				ops[0xC8] = MAKE_TRAITS(ret_cc, jump_condition::Z);
+				ops[0xC9] = MAKE_TRAITS_SIMPLE(ret);
+				ops[0xCA] = MAKE_TRAITS(jp_cc_n16, jump_condition::Z);
+				ops[0xCB] = MAKE_TRAITS_SIMPLE(prefix);
+				ops[0xCC] = MAKE_TRAITS(call_cc_n16, jump_condition::Z);
+				ops[0xCD] = MAKE_TRAITS_SIMPLE(call_n16);
+				ops[0xCE] = MAKE_TRAITS_SIMPLE(adc_n8);
+				ops[0xCF] = MAKE_TRAITS(rst_n8, 0x08);
+				ops[0xD0] = MAKE_TRAITS(ret_cc, jump_condition::NC);
+				ops[0xD1] = MAKE_TRAITS(pop_r16, regpair_de);
+				ops[0xD2] = MAKE_TRAITS(jp_cc_n16, jump_condition::NC);
+				ops[0xD3] = MAKE_TRAITS_SIMPLE(illegal);
+				ops[0xD4] = MAKE_TRAITS(call_cc_n16, jump_condition::NC);
+				ops[0xD5] = MAKE_TRAITS(push_r16, regpair_de);
+				ops[0xD6] = MAKE_TRAITS_SIMPLE(sub_n8);
+				ops[0xD7] = MAKE_TRAITS(rst_n8, 0x10);
+				ops[0xD8] = MAKE_TRAITS(ret_cc, jump_condition::C);
+				ops[0xD9] = MAKE_TRAITS_SIMPLE(reti);
+				ops[0xDA] = MAKE_TRAITS(jp_cc_n16, jump_condition::C);
+				ops[0xDB] = MAKE_TRAITS_SIMPLE(illegal);
+				ops[0xDC] = MAKE_TRAITS(call_cc_n16, jump_condition::C);
+				ops[0xDD] = MAKE_TRAITS_SIMPLE(illegal);
+				ops[0xDE] = MAKE_TRAITS_SIMPLE(sbc_n8);
+				ops[0xDF] = MAKE_TRAITS(rst_n8, 0x18);
+				ops[0xE0] = MAKE_TRAITS(ldh_n8P_r8, &registers::a);
+				ops[0xE1] = MAKE_TRAITS(pop_r16, regpair_hl);
+				ops[0xE2] = MAKE_TRAITS(ldh_r8P_r8, &registers::c, &registers::a);
+				ops[0xE3] = MAKE_TRAITS(isr, 0x40);
+				ops[0xE4] = MAKE_TRAITS(isr, 0x48);
+				ops[0xE5] = MAKE_TRAITS(push_r16, regpair_hl);
+				ops[0xE6] = MAKE_TRAITS_SIMPLE(and_n8);
+				ops[0xE7] = MAKE_TRAITS(rst_n8, 0x20);
+				ops[0xE8] = MAKE_TRAITS_SIMPLE(add_sp_n8);
+				ops[0xE9] = MAKE_TRAITS_SIMPLE(jp_hl);
+				ops[0xEA] = MAKE_TRAITS(ld_n16P_r8, &registers::a);
+				ops[0xEB] = MAKE_TRAITS(isr, 0x50);
+				ops[0xEC] = MAKE_TRAITS(isr, 0x58);
+				ops[0xED] = MAKE_TRAITS(isr, 0x60);
+				ops[0xEE] = MAKE_TRAITS_SIMPLE(xor_n8);
+				ops[0xEF] = MAKE_TRAITS(rst_n8, 0x28);
+				ops[0xF0] = MAKE_TRAITS(ldh_r8_n8P, &registers::a);
+				ops[0xF1] = MAKE_TRAITS(pop_r16, regpair_af);
+				ops[0xF2] = MAKE_TRAITS(ldh_r8_r8P, &registers::a, &registers::c);
+				ops[0xF3] = MAKE_TRAITS_SIMPLE(di);
+				ops[0xF4] = MAKE_TRAITS_SIMPLE(illegal);
+				ops[0xF5] = MAKE_TRAITS(push_r16, regpair_af);
+				ops[0xF6] = MAKE_TRAITS_SIMPLE(or_n8);
+				ops[0xF7] = MAKE_TRAITS(rst_n8, 0x30);
+				ops[0xF8] = MAKE_TRAITS_SIMPLE(ld_hl_sp_n8);
+				ops[0xF9] = MAKE_TRAITS_SIMPLE(ld_sp_hl);
+				ops[0xFA] = MAKE_TRAITS(ld_r8_n16P, &registers::a);
+				ops[0xFB] = MAKE_TRAITS_SIMPLE(ei);
+				ops[0xFC] = MAKE_TRAITS_SIMPLE(illegal);
+				ops[0xFD] = MAKE_TRAITS_SIMPLE(illegal);
+				ops[0xFE] = MAKE_TRAITS_SIMPLE(cp_n8);
+				ops[0xFF] = MAKE_TRAITS(rst_n8, 0x38);
+				ops[0x100] = MAKE_TRAITS(rlc_r8, &registers::b);
+				ops[0x101] = MAKE_TRAITS(rlc_r8, &registers::c);
+				ops[0x102] = MAKE_TRAITS(rlc_r8, &registers::d);
+				ops[0x103] = MAKE_TRAITS(rlc_r8, &registers::e);
+				ops[0x104] = MAKE_TRAITS(rlc_r8, &registers::h);
+				ops[0x105] = MAKE_TRAITS(rlc_r8, &registers::l);
+				ops[0x106] = MAKE_TRAITS(rlc_r16P, regpair_hl);
+				ops[0x107] = MAKE_TRAITS(rlc_r8, &registers::a);
+				ops[0x108] = MAKE_TRAITS(rrc_r8, &registers::b);
+				ops[0x109] = MAKE_TRAITS(rrc_r8, &registers::c);
+				ops[0x10A] = MAKE_TRAITS(rrc_r8, &registers::d);
+				ops[0x10B] = MAKE_TRAITS(rrc_r8, &registers::e);
+				ops[0x10C] = MAKE_TRAITS(rrc_r8, &registers::h);
+				ops[0x10D] = MAKE_TRAITS(rrc_r8, &registers::l);
+				ops[0x10E] = MAKE_TRAITS(rrc_r16P, regpair_hl);
+				ops[0x10F] = MAKE_TRAITS(rrc_r8, &registers::a);
+				ops[0x110] = MAKE_TRAITS(rl_r8, &registers::b);
+				ops[0x111] = MAKE_TRAITS(rl_r8, &registers::c);
+				ops[0x112] = MAKE_TRAITS(rl_r8, &registers::d);
+				ops[0x113] = MAKE_TRAITS(rl_r8, &registers::e);
+				ops[0x114] = MAKE_TRAITS(rl_r8, &registers::h);
+				ops[0x115] = MAKE_TRAITS(rl_r8, &registers::l);
+				ops[0x116] = MAKE_TRAITS(rl_r16P, regpair_hl);
+				ops[0x117] = MAKE_TRAITS(rl_r8, &registers::a);
+				ops[0x118] = MAKE_TRAITS(rr_r8, &registers::b);
+				ops[0x119] = MAKE_TRAITS(rr_r8, &registers::c);
+				ops[0x11A] = MAKE_TRAITS(rr_r8, &registers::d);
+				ops[0x11B] = MAKE_TRAITS(rr_r8, &registers::e);
+				ops[0x11C] = MAKE_TRAITS(rr_r8, &registers::h);
+				ops[0x11D] = MAKE_TRAITS(rr_r8, &registers::l);
+				ops[0x11E] = MAKE_TRAITS(rr_r16P, regpair_hl);
+				ops[0x11F] = MAKE_TRAITS(rr_r8, &registers::a);
+				ops[0x120] = MAKE_TRAITS(sla_r8, &registers::b);
+				ops[0x121] = MAKE_TRAITS(sla_r8, &registers::c);
+				ops[0x122] = MAKE_TRAITS(sla_r8, &registers::d);
+				ops[0x123] = MAKE_TRAITS(sla_r8, &registers::e);
+				ops[0x124] = MAKE_TRAITS(sla_r8, &registers::h);
+				ops[0x125] = MAKE_TRAITS(sla_r8, &registers::l);
+				ops[0x126] = MAKE_TRAITS(sla_r16P, regpair_hl);
+				ops[0x127] = MAKE_TRAITS(sla_r8, &registers::a);
+				ops[0x128] = MAKE_TRAITS(sra_r8, &registers::b);
+				ops[0x129] = MAKE_TRAITS(sra_r8, &registers::c);
+				ops[0x12A] = MAKE_TRAITS(sra_r8, &registers::d);
+				ops[0x12B] = MAKE_TRAITS(sra_r8, &registers::e);
+				ops[0x12C] = MAKE_TRAITS(sra_r8, &registers::h);
+				ops[0x12D] = MAKE_TRAITS(sra_r8, &registers::l);
+				ops[0x12E] = MAKE_TRAITS(sra_r16P, regpair_hl);
+				ops[0x12F] = MAKE_TRAITS(sra_r8, &registers::a);
+				ops[0x130] = MAKE_TRAITS(swap_r8, &registers::b);
+				ops[0x131] = MAKE_TRAITS(swap_r8, &registers::c);
+				ops[0x132] = MAKE_TRAITS(swap_r8, &registers::d);
+				ops[0x133] = MAKE_TRAITS(swap_r8, &registers::e);
+				ops[0x134] = MAKE_TRAITS(swap_r8, &registers::h);
+				ops[0x135] = MAKE_TRAITS(swap_r8, &registers::l);
+				ops[0x136] = MAKE_TRAITS(swap_r16P, regpair_hl);
+				ops[0x137] = MAKE_TRAITS(swap_r8, &registers::a);
+				ops[0x138] = MAKE_TRAITS(srl_r8, &registers::b);
+				ops[0x139] = MAKE_TRAITS(srl_r8, &registers::c);
+				ops[0x13A] = MAKE_TRAITS(srl_r8, &registers::d);
+				ops[0x13B] = MAKE_TRAITS(srl_r8, &registers::e);
+				ops[0x13C] = MAKE_TRAITS(srl_r8, &registers::h);
+				ops[0x13D] = MAKE_TRAITS(srl_r8, &registers::l);
+				ops[0x13E] = MAKE_TRAITS(srl_r16P, regpair_hl);
+				ops[0x13F] = MAKE_TRAITS(srl_r8, &registers::a);
+				ops[0x140] = MAKE_TRAITS(bit_r8, 0, &registers::b);
+				ops[0x141] = MAKE_TRAITS(bit_r8, 0, &registers::c);
+				ops[0x142] = MAKE_TRAITS(bit_r8, 0, &registers::d);
+				ops[0x143] = MAKE_TRAITS(bit_r8, 0, &registers::e);
+				ops[0x144] = MAKE_TRAITS(bit_r8, 0, &registers::h);
+				ops[0x145] = MAKE_TRAITS(bit_r8, 0, &registers::l);
+				ops[0x146] = MAKE_TRAITS(bit_r16P, 0, regpair_hl);
+				ops[0x147] = MAKE_TRAITS(bit_r8, 0, &registers::a);
+				ops[0x148] = MAKE_TRAITS(bit_r8, 1, &registers::b);
+				ops[0x149] = MAKE_TRAITS(bit_r8, 1, &registers::c);
+				ops[0x14A] = MAKE_TRAITS(bit_r8, 1, &registers::d);
+				ops[0x14B] = MAKE_TRAITS(bit_r8, 1, &registers::e);
+				ops[0x14C] = MAKE_TRAITS(bit_r8, 1, &registers::h);
+				ops[0x14D] = MAKE_TRAITS(bit_r8, 1, &registers::l);
+				ops[0x14E] = MAKE_TRAITS(bit_r16P, 1, regpair_hl);
+				ops[0x14F] = MAKE_TRAITS(bit_r8, 1, &registers::a);
+				ops[0x150] = MAKE_TRAITS(bit_r8, 2, &registers::b);
+				ops[0x151] = MAKE_TRAITS(bit_r8, 2, &registers::c);
+				ops[0x152] = MAKE_TRAITS(bit_r8, 2, &registers::d);
+				ops[0x153] = MAKE_TRAITS(bit_r8, 2, &registers::e);
+				ops[0x154] = MAKE_TRAITS(bit_r8, 2, &registers::h);
+				ops[0x155] = MAKE_TRAITS(bit_r8, 2, &registers::l);
+				ops[0x156] = MAKE_TRAITS(bit_r16P, 2, regpair_hl);
+				ops[0x157] = MAKE_TRAITS(bit_r8, 2, &registers::a);
+				ops[0x158] = MAKE_TRAITS(bit_r8, 3, &registers::b);
+				ops[0x159] = MAKE_TRAITS(bit_r8, 3, &registers::c);
+				ops[0x15A] = MAKE_TRAITS(bit_r8, 3, &registers::d);
+				ops[0x15B] = MAKE_TRAITS(bit_r8, 3, &registers::e);
+				ops[0x15C] = MAKE_TRAITS(bit_r8, 3, &registers::h);
+				ops[0x15D] = MAKE_TRAITS(bit_r8, 3, &registers::l);
+				ops[0x15E] = MAKE_TRAITS(bit_r16P, 3, regpair_hl);
+				ops[0x15F] = MAKE_TRAITS(bit_r8, 3, &registers::a);
+				ops[0x160] = MAKE_TRAITS(bit_r8, 4, &registers::b);
+				ops[0x161] = MAKE_TRAITS(bit_r8, 4, &registers::c);
+				ops[0x162] = MAKE_TRAITS(bit_r8, 4, &registers::d);
+				ops[0x163] = MAKE_TRAITS(bit_r8, 4, &registers::e);
+				ops[0x164] = MAKE_TRAITS(bit_r8, 4, &registers::h);
+				ops[0x165] = MAKE_TRAITS(bit_r8, 4, &registers::l);
+				ops[0x166] = MAKE_TRAITS(bit_r16P, 4, regpair_hl);
+				ops[0x167] = MAKE_TRAITS(bit_r8, 4, &registers::a);
+				ops[0x168] = MAKE_TRAITS(bit_r8, 5, &registers::b);
+				ops[0x169] = MAKE_TRAITS(bit_r8, 5, &registers::c);
+				ops[0x16A] = MAKE_TRAITS(bit_r8, 5, &registers::d);
+				ops[0x16B] = MAKE_TRAITS(bit_r8, 5, &registers::e);
+				ops[0x16C] = MAKE_TRAITS(bit_r8, 5, &registers::h);
+				ops[0x16D] = MAKE_TRAITS(bit_r8, 5, &registers::l);
+				ops[0x16E] = MAKE_TRAITS(bit_r16P, 5, regpair_hl);
+				ops[0x16F] = MAKE_TRAITS(bit_r8, 5, &registers::a);
+				ops[0x170] = MAKE_TRAITS(bit_r8, 6, &registers::b);
+				ops[0x171] = MAKE_TRAITS(bit_r8, 6, &registers::c);
+				ops[0x172] = MAKE_TRAITS(bit_r8, 6, &registers::d);
+				ops[0x173] = MAKE_TRAITS(bit_r8, 6, &registers::e);
+				ops[0x174] = MAKE_TRAITS(bit_r8, 6, &registers::h);
+				ops[0x175] = MAKE_TRAITS(bit_r8, 6, &registers::l);
+				ops[0x176] = MAKE_TRAITS(bit_r16P, 6, regpair_hl);
+				ops[0x177] = MAKE_TRAITS(bit_r8, 6, &registers::a);
+				ops[0x178] = MAKE_TRAITS(bit_r8, 7, &registers::b);
+				ops[0x179] = MAKE_TRAITS(bit_r8, 7, &registers::c);
+				ops[0x17A] = MAKE_TRAITS(bit_r8, 7, &registers::d);
+				ops[0x17B] = MAKE_TRAITS(bit_r8, 7, &registers::e);
+				ops[0x17C] = MAKE_TRAITS(bit_r8, 7, &registers::h);
+				ops[0x17D] = MAKE_TRAITS(bit_r8, 7, &registers::l);
+				ops[0x17E] = MAKE_TRAITS(bit_r16P, 7, regpair_hl);
+				ops[0x17F] = MAKE_TRAITS(bit_r8, 7, &registers::a);
+				ops[0x180] = MAKE_TRAITS(res_r8, 0, &registers::b);
+				ops[0x181] = MAKE_TRAITS(res_r8, 0, &registers::c);
+				ops[0x182] = MAKE_TRAITS(res_r8, 0, &registers::d);
+				ops[0x183] = MAKE_TRAITS(res_r8, 0, &registers::e);
+				ops[0x184] = MAKE_TRAITS(res_r8, 0, &registers::h);
+				ops[0x185] = MAKE_TRAITS(res_r8, 0, &registers::l);
+				ops[0x186] = MAKE_TRAITS(res_r16P, 0, regpair_hl);
+				ops[0x187] = MAKE_TRAITS(res_r8, 0, &registers::a);
+				ops[0x188] = MAKE_TRAITS(res_r8, 1, &registers::b);
+				ops[0x189] = MAKE_TRAITS(res_r8, 1, &registers::c);
+				ops[0x18A] = MAKE_TRAITS(res_r8, 1, &registers::d);
+				ops[0x18B] = MAKE_TRAITS(res_r8, 1, &registers::e);
+				ops[0x18C] = MAKE_TRAITS(res_r8, 1, &registers::h);
+				ops[0x18D] = MAKE_TRAITS(res_r8, 1, &registers::l);
+				ops[0x18E] = MAKE_TRAITS(res_r16P, 1, regpair_hl);
+				ops[0x18F] = MAKE_TRAITS(res_r8, 1, &registers::a);
+				ops[0x190] = MAKE_TRAITS(res_r8, 2, &registers::b);
+				ops[0x191] = MAKE_TRAITS(res_r8, 2, &registers::c);
+				ops[0x192] = MAKE_TRAITS(res_r8, 2, &registers::d);
+				ops[0x193] = MAKE_TRAITS(res_r8, 2, &registers::e);
+				ops[0x194] = MAKE_TRAITS(res_r8, 2, &registers::h);
+				ops[0x195] = MAKE_TRAITS(res_r8, 2, &registers::l);
+				ops[0x196] = MAKE_TRAITS(res_r16P, 2, regpair_hl);
+				ops[0x197] = MAKE_TRAITS(res_r8, 2, &registers::a);
+				ops[0x198] = MAKE_TRAITS(res_r8, 3, &registers::b);
+				ops[0x199] = MAKE_TRAITS(res_r8, 3, &registers::c);
+				ops[0x19A] = MAKE_TRAITS(res_r8, 3, &registers::d);
+				ops[0x19B] = MAKE_TRAITS(res_r8, 3, &registers::e);
+				ops[0x19C] = MAKE_TRAITS(res_r8, 3, &registers::h);
+				ops[0x19D] = MAKE_TRAITS(res_r8, 3, &registers::l);
+				ops[0x19E] = MAKE_TRAITS(res_r16P, 3, regpair_hl);
+				ops[0x19F] = MAKE_TRAITS(res_r8, 3, &registers::a);
+				ops[0x1A0] = MAKE_TRAITS(res_r8, 4, &registers::b);
+				ops[0x1A1] = MAKE_TRAITS(res_r8, 4, &registers::c);
+				ops[0x1A2] = MAKE_TRAITS(res_r8, 4, &registers::d);
+				ops[0x1A3] = MAKE_TRAITS(res_r8, 4, &registers::e);
+				ops[0x1A4] = MAKE_TRAITS(res_r8, 4, &registers::h);
+				ops[0x1A5] = MAKE_TRAITS(res_r8, 4, &registers::l);
+				ops[0x1A6] = MAKE_TRAITS(res_r16P, 4, regpair_hl);
+				ops[0x1A7] = MAKE_TRAITS(res_r8, 4, &registers::a);
+				ops[0x1A8] = MAKE_TRAITS(res_r8, 5, &registers::b);
+				ops[0x1A9] = MAKE_TRAITS(res_r8, 5, &registers::c);
+				ops[0x1AA] = MAKE_TRAITS(res_r8, 5, &registers::d);
+				ops[0x1AB] = MAKE_TRAITS(res_r8, 5, &registers::e);
+				ops[0x1AC] = MAKE_TRAITS(res_r8, 5, &registers::h);
+				ops[0x1AD] = MAKE_TRAITS(res_r8, 5, &registers::l);
+				ops[0x1AE] = MAKE_TRAITS(res_r16P, 5, regpair_hl);
+				ops[0x1AF] = MAKE_TRAITS(res_r8, 5, &registers::a);
+				ops[0x1B0] = MAKE_TRAITS(res_r8, 6, &registers::b);
+				ops[0x1B1] = MAKE_TRAITS(res_r8, 6, &registers::c);
+				ops[0x1B2] = MAKE_TRAITS(res_r8, 6, &registers::d);
+				ops[0x1B3] = MAKE_TRAITS(res_r8, 6, &registers::e);
+				ops[0x1B4] = MAKE_TRAITS(res_r8, 6, &registers::h);
+				ops[0x1B5] = MAKE_TRAITS(res_r8, 6, &registers::l);
+				ops[0x1B6] = MAKE_TRAITS(res_r16P, 6, regpair_hl);
+				ops[0x1B7] = MAKE_TRAITS(res_r8, 6, &registers::a);
+				ops[0x1B8] = MAKE_TRAITS(res_r8, 7, &registers::b);
+				ops[0x1B9] = MAKE_TRAITS(res_r8, 7, &registers::c);
+				ops[0x1BA] = MAKE_TRAITS(res_r8, 7, &registers::d);
+				ops[0x1BB] = MAKE_TRAITS(res_r8, 7, &registers::e);
+				ops[0x1BC] = MAKE_TRAITS(res_r8, 7, &registers::h);
+				ops[0x1BD] = MAKE_TRAITS(res_r8, 7, &registers::l);
+				ops[0x1BE] = MAKE_TRAITS(res_r16P, 7, regpair_hl);
+				ops[0x1BF] = MAKE_TRAITS(res_r8, 7, &registers::a);
+				ops[0x1C0] = MAKE_TRAITS(set_r8, 0, &registers::b);
+				ops[0x1C1] = MAKE_TRAITS(set_r8, 0, &registers::c);
+				ops[0x1C2] = MAKE_TRAITS(set_r8, 0, &registers::d);
+				ops[0x1C3] = MAKE_TRAITS(set_r8, 0, &registers::e);
+				ops[0x1C4] = MAKE_TRAITS(set_r8, 0, &registers::h);
+				ops[0x1C5] = MAKE_TRAITS(set_r8, 0, &registers::l);
+				ops[0x1C6] = MAKE_TRAITS(set_r16P, 0, regpair_hl);
+				ops[0x1C7] = MAKE_TRAITS(set_r8, 0, &registers::a);
+				ops[0x1C8] = MAKE_TRAITS(set_r8, 1, &registers::b);
+				ops[0x1C9] = MAKE_TRAITS(set_r8, 1, &registers::c);
+				ops[0x1CA] = MAKE_TRAITS(set_r8, 1, &registers::d);
+				ops[0x1CB] = MAKE_TRAITS(set_r8, 1, &registers::e);
+				ops[0x1CC] = MAKE_TRAITS(set_r8, 1, &registers::h);
+				ops[0x1CD] = MAKE_TRAITS(set_r8, 1, &registers::l);
+				ops[0x1CE] = MAKE_TRAITS(set_r16P, 1, regpair_hl);
+				ops[0x1CF] = MAKE_TRAITS(set_r8, 1, &registers::a);
+				ops[0x1D0] = MAKE_TRAITS(set_r8, 2, &registers::b);
+				ops[0x1D1] = MAKE_TRAITS(set_r8, 2, &registers::c);
+				ops[0x1D2] = MAKE_TRAITS(set_r8, 2, &registers::d);
+				ops[0x1D3] = MAKE_TRAITS(set_r8, 2, &registers::e);
+				ops[0x1D4] = MAKE_TRAITS(set_r8, 2, &registers::h);
+				ops[0x1D5] = MAKE_TRAITS(set_r8, 2, &registers::l);
+				ops[0x1D6] = MAKE_TRAITS(set_r16P, 2, regpair_hl);
+				ops[0x1D7] = MAKE_TRAITS(set_r8, 2, &registers::a);
+				ops[0x1D8] = MAKE_TRAITS(set_r8, 3, &registers::b);
+				ops[0x1D9] = MAKE_TRAITS(set_r8, 3, &registers::c);
+				ops[0x1DA] = MAKE_TRAITS(set_r8, 3, &registers::d);
+				ops[0x1DB] = MAKE_TRAITS(set_r8, 3, &registers::e);
+				ops[0x1DC] = MAKE_TRAITS(set_r8, 3, &registers::h);
+				ops[0x1DD] = MAKE_TRAITS(set_r8, 3, &registers::l);
+				ops[0x1DE] = MAKE_TRAITS(set_r16P, 3, regpair_hl);
+				ops[0x1DF] = MAKE_TRAITS(set_r8, 3, &registers::a);
+				ops[0x1E0] = MAKE_TRAITS(set_r8, 4, &registers::b);
+				ops[0x1E1] = MAKE_TRAITS(set_r8, 4, &registers::c);
+				ops[0x1E2] = MAKE_TRAITS(set_r8, 4, &registers::d);
+				ops[0x1E3] = MAKE_TRAITS(set_r8, 4, &registers::e);
+				ops[0x1E4] = MAKE_TRAITS(set_r8, 4, &registers::h);
+				ops[0x1E5] = MAKE_TRAITS(set_r8, 4, &registers::l);
+				ops[0x1E6] = MAKE_TRAITS(set_r16P, 4, regpair_hl);
+				ops[0x1E7] = MAKE_TRAITS(set_r8, 4, &registers::a);
+				ops[0x1E8] = MAKE_TRAITS(set_r8, 5, &registers::b);
+				ops[0x1E9] = MAKE_TRAITS(set_r8, 5, &registers::c);
+				ops[0x1EA] = MAKE_TRAITS(set_r8, 5, &registers::d);
+				ops[0x1EB] = MAKE_TRAITS(set_r8, 5, &registers::e);
+				ops[0x1EC] = MAKE_TRAITS(set_r8, 5, &registers::h);
+				ops[0x1ED] = MAKE_TRAITS(set_r8, 5, &registers::l);
+				ops[0x1EE] = MAKE_TRAITS(set_r16P, 5, regpair_hl);
+				ops[0x1EF] = MAKE_TRAITS(set_r8, 5, &registers::a);
+				ops[0x1F0] = MAKE_TRAITS(set_r8, 6, &registers::b);
+				ops[0x1F1] = MAKE_TRAITS(set_r8, 6, &registers::c);
+				ops[0x1F2] = MAKE_TRAITS(set_r8, 6, &registers::d);
+				ops[0x1F3] = MAKE_TRAITS(set_r8, 6, &registers::e);
+				ops[0x1F4] = MAKE_TRAITS(set_r8, 6, &registers::h);
+				ops[0x1F5] = MAKE_TRAITS(set_r8, 6, &registers::l);
+				ops[0x1F6] = MAKE_TRAITS(set_r16P, 6, regpair_hl);
+				ops[0x1F7] = MAKE_TRAITS(set_r8, 6, &registers::a);
+				ops[0x1F8] = MAKE_TRAITS(set_r8, 7, &registers::b);
+				ops[0x1F9] = MAKE_TRAITS(set_r8, 7, &registers::c);
+				ops[0x1FA] = MAKE_TRAITS(set_r8, 7, &registers::d);
+				ops[0x1FB] = MAKE_TRAITS(set_r8, 7, &registers::e);
+				ops[0x1FC] = MAKE_TRAITS(set_r8, 7, &registers::h);
+				ops[0x1FD] = MAKE_TRAITS(set_r8, 7, &registers::l);
+				ops[0x1FE] = MAKE_TRAITS(set_r16P, 7, regpair_hl);
+				ops[0x1FF] = MAKE_TRAITS(set_r8, 7, &registers::a);
+				
+				return ops;
+			}();
+
+			return ops;
+		};
 	}
 }

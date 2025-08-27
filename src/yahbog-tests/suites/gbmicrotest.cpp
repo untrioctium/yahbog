@@ -28,24 +28,10 @@ test_suite::emulator_result run_gbmicrotest_test(gbmicrotest_test& test) {
     emu->z80.reset(&emu->mem_fns);
     emu->io.reset();
     emu->ppu.reset();
+	emu->mmu.write(0xFF82, 0x00);
 
     bool done = false;
     bool passed = false;
-
-    emu->hook_writing([&done, &passed](std::uint16_t addr, std::uint8_t value) {
-        if(addr == 0xFF82) [[unlikely]] {
-            if(value == 0x01) {
-                done = true;
-                passed = true;
-                return true;
-            } else if(value == 0xFF) {
-                done = true;
-                passed = false;
-                return true;
-            }
-        }
-        return false;
-    });
 
 	const std::size_t max_cycles = static_cast<std::size_t>(10 * GB_CPU_FREQUENCY_HZ); // 1 real second
 
@@ -54,6 +40,14 @@ test_suite::emulator_result run_gbmicrotest_test(gbmicrotest_test& test) {
 	while(cycles < max_cycles) {
 		emu->tick();
 		cycles++;
+
+		if(emu->mmu.read(0xFF82) == 0x01) [[unlikely]] {
+			done = true;
+			passed = true;
+		} else if(emu->mmu.read(0xFF82) == 0xFF) [[unlikely]] {
+			done = true;
+			passed = false;
+		}
 
 		if(done) [[unlikely]] {
 			auto end_time = std::chrono::high_resolution_clock::now();

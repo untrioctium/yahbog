@@ -15,6 +15,7 @@ add_library(
     include/yahbog/registers.h
     include/yahbog/rom.h
     include/yahbog/timer.h
+    include/yahbog/wram.h
 
     include/yahbog/impl/emulator_impl.h
     include/yahbog/impl/ppu_impl.h

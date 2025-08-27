@@ -12,6 +12,9 @@ namespace yahbog {
 template<hardware_mode Mode>
 class timer_t : public serializable<timer_t<Mode>> {
 public:
+
+	using int_req_t = constexpr_function<void(interrupt)>;
+
 	/*
 	 * Memory-mapped IO address range for the Game Boy timers
 	 *   FF04 – DIV   (Divider, read-only, write resets)
@@ -28,7 +31,7 @@ public:
 		};
 	}
 
-	constexpr explicit timer_t(mem_fns_t* mem) noexcept : mem(mem) {
+	constexpr explicit timer_t(int_req_t&& int_fn) noexcept : request_interrupt(std::move(int_fn)) {
 		// Power-on state observed on DMG/MGB
 		internal_counter = (0xABu << 8) | 0xD0u; //   DIV=AB  sub-div(/4)=0x34
 		div = static_cast<std::uint8_t>(internal_counter >> 8);
@@ -46,24 +49,7 @@ public:
 		check_tick(old_counter);
 	}
 
-	constexpr void check_tick(std::uint32_t old_counter) noexcept {
-		if(!tac.v.enable) {
-			return;
-		}
-
-		constexpr std::uint8_t sel_bit[4]{9,3,5,7};
-		const auto bit = sel_bit[tac.v.clock_select & 3u];
-
-		const bool falling_edge = ((old_counter >> bit) & 1u) && !((internal_counter >> bit) & 1u);
-		if(!falling_edge) return;
-
-		if(tima == 0xFF) {
-			tima = tma;
-			request_interrupt();
-		} else {
-			tima++;
-		}
-	}
+	constexpr void check_tick(std::uint32_t old_counter);
 
 
 	/* ----- serialization support ----- */
@@ -78,7 +64,7 @@ public:
 	}
 
 private:
-	mem_fns_t* mem = nullptr;
+	int_req_t request_interrupt;
 
 	std::uint32_t internal_counter{0}; // 16-bit is enough but 32 keeps overflow defined
 	std::uint8_t div{0};
@@ -96,20 +82,7 @@ private:
 	io_register<tac_t> tac{};
 
 	// ------ MMIO helpers ------
-	constexpr void write_div([[maybe_unused]] uint16_t addr, [[maybe_unused]] uint8_t) {
-
-		auto old_counter = internal_counter;
-		internal_counter = 0;
-		div = 0;
-
-		check_tick(old_counter);
-	}
-
-	constexpr void request_interrupt() noexcept {
-		// Set bit 2 in IF (0xFF0F)
-		const auto if_val = mem->read(0xFF0F);
-		mem->write(0xFF0F, static_cast<std::uint8_t>(if_val | 0x04));
-	}
+	constexpr void write_div([[maybe_unused]] uint16_t addr, [[maybe_unused]] uint8_t);
 };
 
 } // namespace yahbog

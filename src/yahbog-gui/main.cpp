@@ -5,6 +5,7 @@
 #include <imgui_impl_opengl3.h>
 #include <iostream>
 #include <span>
+#include <print>
 
 #include <yahbog.h>
 
@@ -69,7 +70,7 @@ struct rendering_context {
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
-	void run_convert(const yahbog::ppu_t::framebuffer_t& framebuffer) {
+	void run_convert(const decltype(yahbog::emulator<yahbog::hardware_mode::dmg>::ppu)::framebuffer_t& framebuffer) {
 		glBindTexture(GL_TEXTURE_2D, gameboy_image);
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 40, 144, GL_RED_INTEGER, GL_UNSIGNED_BYTE, framebuffer.data());
@@ -116,7 +117,7 @@ int main()
 		return -1;
 	}
 	glfwMakeContextCurrent(window);
-	glfwSwapInterval(1); // Enable vsync
+	glfwSwapInterval(0); // Enable vsync
 
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
@@ -140,9 +141,9 @@ int main()
 	bool show_demo_window = true;
 	ImVec4 clear_color = ImVec4(0.0f, 0.0f, 0.0f, 1.00f);
 
-	auto emu = std::make_unique<yahbog::emulator>(yahbog::hardware_mode::dmg);
+	auto emu = std::make_unique<yahbog::emulator<yahbog::hardware_mode::dmg>>();
 
-	auto rom = yahbog::rom_t::load_rom(std::filesystem::path("testdata/blargg/cpu_instrs/01-special.gb"));
+	auto rom = yahbog::rom_t::load_rom(std::filesystem::path("roms/Dr. Mario (World) (Rev 1).gb"));
 	if(!rom) {
 		std::cerr << "Failed to load ROM" << std::endl;
 		return -1;
@@ -197,6 +198,8 @@ int main()
 
 		glfwSwapBuffers(window);
 	}
+
+	std::println("Done");
 
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();

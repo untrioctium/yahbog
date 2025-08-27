@@ -5,8 +5,8 @@
 
 namespace yahbog {
 
-	template<hardware_mode Mode>
-	constexpr void ppu_t<Mode>::oam_tick() noexcept {
+	template<hardware_mode Mode, typename MemProvider>
+	constexpr void ppu_t<Mode, MemProvider>::oam_tick() noexcept {
 		if (mode_clock >= 80) {
 			mode_clock = 0;
 			lcd_status.v.mode = mode_t::vram;
@@ -14,23 +14,23 @@ namespace yahbog {
 		}
 	}
 
-	template<hardware_mode Mode>
-	constexpr void ppu_t<Mode>::vram_tick() noexcept {
+	template<hardware_mode Mode, typename MemProvider>
+	constexpr void ppu_t<Mode, MemProvider>::vram_tick() noexcept {
 		if (mode_clock >= 172) {
 			mode_clock = 0;
 			lcd_status.v.mode = mode_t::hblank;
 			mode_ptr = &ppu_t::hblank_tick;
 
 			if(lcd_status.v.mode_hblank) {
-				request_interrupt(interrupt::stat, mem_fns);
+				request_interrupt(interrupt::stat);
 			}
 
 			render_scanline();
 		}
 	}
 
-	template<hardware_mode Mode>
-	constexpr void ppu_t<Mode>::hblank_tick() noexcept {
+	template<hardware_mode Mode, typename MemProvider>
+	constexpr void ppu_t<Mode, MemProvider>::hblank_tick() noexcept {
 		if (mode_clock >= 204) {
 			mode_clock = 0;
 			ly++;
@@ -41,10 +41,10 @@ namespace yahbog {
 				auto& current_draw_buffer = m_framebuffers[next_buffer_idx()];
 				std::fill(current_draw_buffer.begin(), current_draw_buffer.end(), 0);
 
-				request_interrupt(interrupt::vblank, mem_fns);
+				request_interrupt(interrupt::vblank);
 
 				if(lcd_status.v.mode_vblank) {
-					request_interrupt(interrupt::stat, mem_fns);
+					request_interrupt(interrupt::stat);
 				}
 			}
 			else {
@@ -52,14 +52,14 @@ namespace yahbog {
 				mode_ptr = &ppu_t::oam_tick;
 
 				if(lcd_status.v.mode_oam) {
-					request_interrupt(interrupt::stat, mem_fns);
+					request_interrupt(interrupt::stat);
 				}
 			}
 		}
 	}
 
-	template<hardware_mode Mode>
-	constexpr void ppu_t<Mode>::vblank_tick() noexcept {
+	template<hardware_mode Mode, typename MemProvider>
+	constexpr void ppu_t<Mode, MemProvider>::vblank_tick() noexcept {
 		if (mode_clock >= 456) {
 			mode_clock = 0;
 			ly++;
@@ -69,14 +69,14 @@ namespace yahbog {
 				mode_ptr = &ppu_t::oam_tick;
 
 				if(ly < 144 && lcd_status.v.mode_oam) {
-					request_interrupt(interrupt::stat, mem_fns);
+					request_interrupt(interrupt::stat);
 				}
 			}
 		}
 	}
 
-	template<hardware_mode Mode>
-	constexpr void ppu_t<Mode>::tick() noexcept {
+	template<hardware_mode Mode, typename MemProvider>
+	constexpr void ppu_t<Mode, MemProvider>::tick() noexcept {
 
 		dma_tick();
 
@@ -91,7 +91,7 @@ namespace yahbog {
 		lcd_status.v.coincidence = lyc == ly;
 
 		if(!prev_coincidence && lcd_status.v.coincidence && lcd_status.v.lyc_condition) {
-			request_interrupt(interrupt::stat, mem_fns);
+			request_interrupt(interrupt::stat);
 		}
 	}
 
@@ -99,8 +99,8 @@ namespace yahbog {
 		return (value >> start) & ((1 << size) - 1);
 	}
 
-	template<hardware_mode Mode>
-	constexpr void ppu_t<Mode>::render_scanline() noexcept
+	template<hardware_mode Mode, typename MemProvider>
+	constexpr void ppu_t<Mode, MemProvider>::render_scanline() noexcept
 	{
 		// Each BG map row is 32 bytes wide; include the row stride in the offset
 		const auto map_offset = (lcdc.v.bg_tile_map ? 0x1C00 : 0x1800)

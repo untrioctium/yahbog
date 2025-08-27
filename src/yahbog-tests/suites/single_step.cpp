@@ -122,11 +122,16 @@ struct test_info {
 			mem.memory[addr] = value;
 		}
 
-		auto mem_fns = yahbog::mem_fns_t{};
+		struct test_mem_fns {
+			yahbog::constexpr_function<std::uint8_t(std::uint16_t)> read;
+			yahbog::constexpr_function<void(std::uint16_t, std::uint8_t)> write;
+		};
+
+		test_mem_fns mem_fns;
 		mem_fns.read = [&mem](uint16_t addr) { return mem.read(addr); };
 		mem_fns.write = [&mem](uint16_t addr, uint8_t value) { mem.write(addr, value); };
-
-		yahbog::cpu_t<yahbog::hardware_mode::dmg> cpu{};
+		
+		yahbog::cpu_t<yahbog::hardware_mode::dmg, test_mem_fns> cpu{};
 		cpu.reset( &mem_fns );
 		cpu.load_registers(initial_state.regs);
 		cpu.prefetch( &mem_fns );
@@ -281,7 +286,7 @@ bool run_single_step_tests() {
 
 	load_progress.finish();
 
-	const auto num_threads = 1;//std::thread::hardware_concurrency();
+	const auto num_threads = std::thread::hardware_concurrency();
 	suite.print_info("⚡ Running tests with " + std::to_string(num_threads) + " threads...");
 
 	// Test execution progress

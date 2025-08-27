@@ -12,138 +12,56 @@
 #include <yahbog/io.h>
 #include <yahbog/timer.h>
 #include <yahbog/apu.h>
+#include <yahbog/wram.h>
 
 namespace yahbog {
 
 	template<hardware_mode Mode>
-	class wram_t : public serializable<wram_t<Mode>> {
-	public:
-		consteval static auto address_range() {
-			return std::array{
-				address_range_t<wram_t>{0xC000, 0xCFFF, &wram_t::read_bank00, &wram_t::write_bank00},
-				address_range_t<wram_t>{0xD000, 0xDFFF, &wram_t::read_banked, &wram_t::write_banked},
-				address_range_t<wram_t>{0xE000, 0xFDFF, &wram_t::read_echo, &wram_t::write_echo},
-				address_range_t<wram_t>{0xFF80, 0xFFFE, &wram_t::read_hram, &wram_t::write_hram},
-				address_range_t<wram_t>{0xFF70, &wram_t::read_bank_idx, &wram_t::write_bank_idx}
-			};
-		}
+	struct mem_fns_t;
 
-		constexpr static auto wram_size = Mode == hardware_mode::dmg ? 0x2000 : 0x8000;
+	template<hardware_mode Mode>
+	using emu_mmu_t = memory_dispatcher<std::numeric_limits<std::uint16_t>::max() + 1, ppu_t<Mode, mem_fns_t<Mode>>, wram_t<Mode>, rom_t, timer_t<Mode>, cpu_t<Mode, mem_fns_t<Mode>>, io_t<Mode>, apu_t<Mode>>;
 
-		std::array<uint8_t, wram_size> wram;
-		std::array<uint8_t, 0x7F> hram{0};
-		std::uint8_t ram_bank_idx = 1;
+	template<hardware_mode Mode>
+	using emu_reader_t = function_ref<std::uint8_t(std::uint16_t), emu_mmu_t<Mode>>;
+	template<hardware_mode Mode>
+	using emu_writer_t = function_ref<void(std::uint16_t, std::uint8_t), emu_mmu_t<Mode>>;
 
-		consteval static auto serializable_members() {
-			return std::tuple{
-				&wram_t::wram,
-				&wram_t::hram,
-				&wram_t::ram_bank_idx
-			};
-		}
-
-	private:
-
-		constexpr static std::size_t bank_size = 0x1000; // 4kb
-
-		constexpr uint8_t read_bank00(uint16_t addr) { 
-			ASSUME_IN_RANGE(addr, 0xC000, 0xCFFF);
-
-			return wram[addr - 0xC000]; 
-		}
-		constexpr void write_bank00(uint16_t addr, uint8_t value) { 
-			ASSUME_IN_RANGE(addr, 0xC000, 0xCFFF);
-
-			wram[addr - 0xC000] = value; 
-		}
-
-		constexpr uint8_t read_banked(uint16_t addr) {
-			ASSUME_IN_RANGE(addr, 0xD000, 0xDFFF);
-			ASSUME_IN_RANGE(ram_bank_idx, 1, 7);
-
-			return wram[addr - 0xD000 + ram_bank_idx * bank_size];
-		}
-
-		constexpr void write_banked(uint16_t addr, uint8_t value) {
-			ASSUME_IN_RANGE(addr, 0xD000, 0xDFFF);
-			ASSUME_IN_RANGE(ram_bank_idx, 1, 7);
-
-			wram[addr - 0xD000 + ram_bank_idx * bank_size] = value;
-		}
-
-		constexpr uint8_t read_echo(uint16_t addr) {
-			ASSUME_IN_RANGE(addr, 0xE000, 0xFDFF);
-
-			const std::uint16_t effective_addr = static_cast<std::uint16_t>(addr - 0x2000);
-			if (effective_addr < 0xD000) {
-				return wram[effective_addr - 0xC000];
-			} else {
-				ASSUME_IN_RANGE(ram_bank_idx, 1, 7);
-				return wram[effective_addr - 0xD000 + ram_bank_idx * bank_size];
-			}
-		}
-
-		constexpr void write_echo(uint16_t addr, uint8_t value) {
-			ASSUME_IN_RANGE(addr, 0xE000, 0xFDFF);
-
-			const std::uint16_t effective_addr = static_cast<std::uint16_t>(addr - 0x2000);
-			if (effective_addr < 0xD000) {
-				wram[effective_addr - 0xC000] = value;
-			} else {
-				ASSUME_IN_RANGE(ram_bank_idx, 1, 7);
-				wram[effective_addr - 0xD000 + ram_bank_idx * bank_size] = value;
-			}
-		}
-
-		constexpr uint8_t read_hram(uint16_t addr) { 
-			ASSUME_IN_RANGE(addr, 0xFF80, 0xFFFE);
-
-			return hram[addr - 0xFF80]; 
-		}
-		constexpr void write_hram(uint16_t addr, uint8_t value) { 
-			ASSUME_IN_RANGE(addr, 0xFF80, 0xFFFE);
-
-			hram[addr - 0xFF80] = value; 
-		}
-
-		constexpr uint8_t read_bank_idx([[maybe_unused]] uint16_t addr) { 
-			if constexpr (Mode == hardware_mode::dmg) {
-				return 0xFF;
-			}
-			return ram_bank_idx; 
-		}
-		constexpr void write_bank_idx([[maybe_unused]] uint16_t addr, uint8_t value) { 
-			if constexpr (Mode == hardware_mode::dmg) {
-				return;
-			}
-			ram_bank_idx = std::clamp(value, std::uint8_t{1}, std::uint8_t{7}); 
-		}
+	template<hardware_mode Mode>
+	struct mem_fns_t {
+		emu_reader_t<Mode> read;
+		emu_writer_t<Mode> write;
+		bus_state state;
 	};
 
 	template<hardware_mode Mode>
 	class emulator {
 	public:
 
-		mem_fns_t mem_fns;
-		mem_fns_t blocked_mem_fns;
+		mem_fns_t<Mode> mem_fns;
+		mem_fns_t<Mode> blocked_mem_fns;
 
 		wram_t<Mode> wram;
 		std::unique_ptr<rom_t> rom;
-		cpu_t<Mode> z80;
-		ppu_t<Mode> ppu;
+		cpu_t<Mode, mem_fns_t<Mode>> z80;
+		ppu_t<Mode, mem_fns_t<Mode>> ppu;
 		timer_t<Mode> timer;
 		io_t<Mode> io;
 		apu_t<Mode> apu;
 
-		constexpr static std::size_t address_space_size = std::numeric_limits<std::uint16_t>::max() + 1;
-		memory_dispatcher<address_space_size, ppu_t<Mode>, wram_t<Mode>, rom_t, timer_t<Mode>, cpu_t<Mode>, io_t<Mode>, apu_t<Mode>> mmu;
+
+		emu_mmu_t<Mode> mmu;
 
 		constexpr emulator() : 
 			mem_fns{default_reader(), default_writer(), bus_state::normal},
 			blocked_mem_fns{blocked_reader(), blocked_writer(), bus_state::dma_blocked},
 			wram(),
-			ppu(&mem_fns),
-			timer(&mem_fns)
+			ppu(&mem_fns, [this](interrupt i) {
+				this->z80.request_interrupt(i);
+			}),
+			timer([this](interrupt i) {
+				this->z80.request_interrupt(i);
+			})
 			{
 				mmu.set_handler(&wram);
 				mmu.set_handler(&ppu);
@@ -183,52 +101,31 @@ namespace yahbog {
 			ppu.tick();
 		}
 
-		constexpr read_fn_t default_reader() noexcept {
-			return [this](std::uint16_t addr) noexcept { return mmu.read(addr); };
+		constexpr emu_reader_t<Mode> default_reader() noexcept {
+			return {[](emu_mmu_t<Mode>* mmu, std::uint16_t addr) noexcept { return mmu->read(addr); }, &mmu};
 		}
 
-		constexpr write_fn_t default_writer() noexcept { 
-			return [this](std::uint16_t addr, std::uint8_t value) noexcept { mmu.write(addr, value); };
+		constexpr emu_writer_t<Mode> default_writer() noexcept { 
+			return {[](emu_mmu_t<Mode>* mmu, std::uint16_t addr, std::uint8_t value) noexcept { mmu->write(addr, value); }, &mmu};
 		}
 
-		constexpr read_fn_t blocked_reader() noexcept {
-			return [this](std::uint16_t addr) noexcept -> std::uint8_t { 
+		constexpr emu_reader_t<Mode> blocked_reader() noexcept {
+			return {[](emu_mmu_t<Mode>* mmu, std::uint16_t addr) noexcept -> std::uint8_t { 
 				if(addr >= 0xFE00 && addr <= 0xFE9F) [[unlikely]] {
 					return 0xFF;
 				} else {
-					return mmu.read(addr);
+					return mmu->read(addr);
 				}
-			 };
+			 }, &mmu};
 		}
-		constexpr write_fn_t blocked_writer() noexcept {
-			return [this](std::uint16_t addr, std::uint8_t value) noexcept -> void { 
+		constexpr emu_writer_t<Mode> blocked_writer() noexcept {
+			return {[](emu_mmu_t<Mode>* mmu, std::uint16_t addr, std::uint8_t value) noexcept -> void { 
 				if(addr >= 0xFE00 && addr <= 0xFE9F) [[unlikely]] {
 					return;
 				} else {
-					mmu.write(addr, value);
+					mmu->write(addr, value);
 				}
-			};
-		}
-
-		using reader_hook_response = std::variant<std::monostate, std::uint8_t>;
-
-		constexpr void hook_reading(constexpr_function<reader_hook_response(std::uint16_t)>&& hook) noexcept {
-			mem_fns.read = [next = default_reader(), hook = std::move(hook)](std::uint16_t addr) noexcept {
-				auto response = hook(addr);
-				if (std::holds_alternative<std::uint8_t>(response)) [[unlikely]] {
-					return std::get<std::uint8_t>(response);
-				}
-				return next(addr);
-			};
-		}
-
-		constexpr void hook_writing(constexpr_function<bool(std::uint16_t, std::uint8_t)>&& hook) noexcept {
-			mem_fns.write = [next = default_writer(), hook = std::move(hook)](std::uint16_t addr, std::uint8_t value) noexcept {
-				if (hook(addr, value)) [[unlikely]] {
-					return;
-				}
-				next(addr, value);
-			};
+			}, &mmu};
 		}
 
 		constexpr static sha1::digest_t version_signature = []() {
@@ -241,10 +138,10 @@ namespace yahbog {
 			rom_t::add_version_signature(hasher);
 
 			hasher.process_bytes("cpu");
-			cpu_t<Mode>::add_version_signature(hasher);
+			cpu_t<Mode, mem_fns_t<Mode>>::add_version_signature(hasher);
 
 			hasher.process_bytes("gpu");
-			ppu_t<Mode>::add_version_signature(hasher);
+			ppu_t<Mode, mem_fns_t<Mode>>::add_version_signature(hasher);
 
 			hasher.process_bytes("io");
 			io_t<Mode>::add_version_signature(hasher);
@@ -321,8 +218,6 @@ namespace yahbog {
 
 			return deserialize_result::success;
 		}
-
-	private:
 
 	};
 

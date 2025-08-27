@@ -37,7 +37,7 @@ FetchContent_MakeAvailable(zlib)
 add_library(ZLIB::ZLIB ALIAS zlib)
 set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" "${zlib_BINARY_DIR}")
 
-option(ENABLE_XRAY "Enable LLVM XRay instrumentation" OFF)
+option(ENABLE_XRAY "Enable LLVM XRay instrumentation" ON)
 
 function(enable_xray target)
   if (CMAKE_CXX_COMPILER_ID MATCHES "Clang.*")

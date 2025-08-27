@@ -21,10 +21,10 @@ namespace yahbog {
 		dma_blocked
 	};
 
-	template<hardware_mode Mode>
+	template<hardware_mode Mode, typename MemProvider>
 	class cpu_t;
 
-	template<hardware_mode Mode>
+	template<hardware_mode Mode, typename MemProvider>
 	class ppu_t;
 
 	template<hardware_mode Mode>
@@ -44,17 +44,8 @@ namespace yahbog {
 
 	class rom_t;
 
+	template<hardware_mode Mode>
 	class mmu_t;
-
-    using read_fn_t = yahbog::constexpr_function<uint8_t(uint16_t)>;
-	using write_fn_t = yahbog::constexpr_function<void(uint16_t, uint8_t)>;
-
-    struct mem_fns_t {
-		read_fn_t read;
-		write_fn_t write;
-
-		bus_state state;
-	}; 
 
     template<typename T>
 	struct address_range_t {
@@ -86,12 +77,61 @@ namespace yahbog {
 		joypad = 0x04,
 	};
 
-    constexpr void request_interrupt(interrupt i, mem_fns_t* mem) noexcept {
-		mem->write(0xFF0F, mem->read(0xFF0F) | (1 << static_cast<std::uint8_t>(i)));
-	}
+	template<typename MemProvider>
+    constexpr void request_interrupt(interrupt i, MemProvider* mem) noexcept;
 
-	constexpr void clear_interrupt(interrupt i, mem_fns_t* mem) noexcept {
-		mem->write(0xFF0F, mem->read(0xFF0F) & ~(1 << static_cast<std::uint8_t>(i)));
-	}
+	template<typename MemProvider>
+	constexpr void clear_interrupt(interrupt i, MemProvider* mem) noexcept;
 
+	template<typename T, std::size_t N>
+	class fifo {
+	public:
+
+		constexpr void push(T value) noexcept {
+			data[tail++] = value;
+			if(tail == N) tail = 0;
+		}
+
+		constexpr T pop() noexcept {
+			if(head == tail) return T{};
+			const auto value = data[head++];
+			if(head == N) head = 0;
+			return value;
+		}
+
+		constexpr T peek() const noexcept {
+			if(head == tail) return T{};
+			return data[head];
+		}
+
+		constexpr bool empty() const noexcept { return head == tail; }
+		constexpr bool full() const noexcept { return (tail + 1) % N == head; }
+
+		constexpr std::size_t size() const noexcept {
+			if(tail >= head) return tail - head;
+			return N - (head - tail);
+		}
+
+		constexpr std::size_t capacity() const noexcept { return N; }
+		
+	private:
+		std::array<T, N> data;
+		std::size_t head = 0; // location of the next element to be read
+		std::size_t tail = 0; // location of the next element to be written
+	};
+
+	template<typename F, typename Context>
+	struct function_ref;
+
+	template<typename R, typename... Args, typename Context>
+	struct function_ref<R(Args...), Context> {
+		R (*fn)(Context*, Args...);
+		Context* ctx;
+
+		constexpr function_ref(R (*fn)(Context*, Args...), Context* ctx) : fn(fn), ctx(ctx) {}
+
+		constexpr R operator()(Args... args) const noexcept {
+			return fn(ctx, std::forward<Args>(args)...);
+		}
+	};
 }

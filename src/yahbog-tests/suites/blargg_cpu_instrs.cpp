@@ -273,26 +273,6 @@ static bool run_test(const std::filesystem::path& rom_path, yahbog::hardware_mod
 	DEFER(execution_done.request_stop());
 
 	auto emu = std::make_unique<yahbog::dmg_emulator>();
-	emu->hook_writing([](uint16_t addr, uint8_t value) {
-		// ignore audio registers
-		if(addr >= 0xFF10 && addr <= 0xFF3F) {
-			return true;
-		}
-
-		// ignore serial transfer registers
-		if(addr == 0xFF01 || addr == 0xFF02) {
-			return true;
-		}
-		return false;
-	});
-
-	emu->hook_reading([](uint16_t addr) -> yahbog::dmg_emulator::reader_hook_response {
-		// pin LCDC.LY to 0x90 for Gameboy Doctor log consistency
-		if(addr == 0xFF44) {
-			return std::uint8_t{0x90};
-		}
-		return {};
-	});
 
 	auto rom = yahbog::rom_t::load_rom(rom_path.string());
 	if(!rom) {

@@ -7,50 +7,15 @@
 
 namespace yahbog {
 
-	template<typename T, std::size_t N>
-	class fifo {
-	public:
-
-		constexpr void push(T value) noexcept {
-			data[tail++] = value;
-			if(tail == N) tail = 0;
-		}
-
-		constexpr T pop() noexcept {
-			if(head == tail) return T{};
-			const auto value = data[head++];
-			if(head == N) head = 0;
-			return value;
-		}
-
-		constexpr T peek() const noexcept {
-			if(head == tail) return T{};
-			return data[head];
-		}
-
-		constexpr bool empty() const noexcept { return head == tail; }
-		constexpr bool full() const noexcept { return (tail + 1) % N == head; }
-
-		constexpr std::size_t size() const noexcept {
-			if(tail >= head) return tail - head;
-			return N - (head - tail);
-		}
-
-		constexpr std::size_t capacity() const noexcept { return N; }
-		
-	private:
-		std::array<T, N> data;
-		std::size_t head = 0; // location of the next element to be read
-		std::size_t tail = 0; // location of the next element to be written
-	};
-
 	using bg_fifo_t = fifo<std::uint8_t, 16>;
 
-	template<hardware_mode Mode>
-	class ppu_t : public serializable<ppu_t<Mode>> {
+	template<hardware_mode Mode, typename MemProvider>
+	class ppu_t : public serializable<ppu_t<Mode, MemProvider>> {
 	public:
 
-		constexpr ppu_t(mem_fns_t* mem_fns) noexcept : mem_fns(mem_fns) {
+		using int_req_t = constexpr_function<void(interrupt)>;
+
+		constexpr ppu_t(MemProvider* mem_fns, int_req_t&& int_fn) noexcept : mem_fns(mem_fns), request_interrupt(std::move(int_fn)) {
 			lcd_status.v.mode = mode_t::hblank;
 		}
 
@@ -171,7 +136,8 @@ namespace yahbog {
 			vram = 3
 		};
 
-		mem_fns_t* mem_fns = nullptr;
+		MemProvider* mem_fns = nullptr;
+		int_req_t request_interrupt;
 
 		constexpr void update_tile_data(std::uint16_t addr) noexcept {
 			auto saddr = addr;

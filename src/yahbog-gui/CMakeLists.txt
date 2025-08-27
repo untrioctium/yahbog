@@ -55,3 +55,7 @@ target_link_libraries(imgui PUBLIC freetype glfw glad)
 
 target_precompile_headers(yahbog-gui REUSE_FROM yahbog-core)
 target_link_libraries(yahbog-gui PRIVATE imgui yahbog-core)
+
+if(ENABLE_XRAY)
+    enable_xray(yahbog-gui)
+endif()
