@@ -60,6 +60,21 @@ namespace yahbog {
 		std::unique_ptr<callable> callable_ptr;
 	};
 
+	template<typename F, typename Context>
+	struct function_ref;
+
+	template<typename R, typename... Args, typename Context>
+	struct function_ref<R(Args...), Context> {
+		R (*fn)(Context*, Args...);
+		Context* ctx;
+
+		constexpr function_ref(R (*fn)(Context*, Args...), Context* ctx) : fn(fn), ctx(ctx) {}
+
+		constexpr R operator()(Args... args) const noexcept {
+			return fn(ctx, std::forward<Args>(args)...);
+		}
+	};
+
 	namespace static_test {
 		using test_t = constexpr_function<int()>;
 		static_assert(test_t{[](){ return 42;}}() == 42, "constexpr_function is not constexpr");

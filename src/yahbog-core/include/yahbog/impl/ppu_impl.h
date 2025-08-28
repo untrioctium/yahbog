@@ -35,6 +35,7 @@ namespace yahbog {
 			mode_clock = 0;
 			ly++;
 			if (ly == 144) {
+				check_coincidence();
 				lcd_status.v.mode = mode_t::vblank;
 				mode_ptr = &ppu_t::vblank_tick;
 				swap_buffers();
@@ -48,6 +49,7 @@ namespace yahbog {
 				}
 			}
 			else {
+				check_coincidence();
 				lcd_status.v.mode = mode_t::oam;
 				mode_ptr = &ppu_t::oam_tick;
 
@@ -65,12 +67,15 @@ namespace yahbog {
 			ly++;
 			if (ly > 153) {
 				ly = 0;
+				check_coincidence();
 				lcd_status.v.mode = mode_t::oam;
 				mode_ptr = &ppu_t::oam_tick;
 
 				if(ly < 144 && lcd_status.v.mode_oam) {
 					request_interrupt(interrupt::stat);
 				}
+			} else {
+				check_coincidence();
 			}
 		}
 	}
@@ -86,13 +91,6 @@ namespace yahbog {
 
 		mode_clock ++;
 		(this->*mode_ptr)();
-
-		const bool prev_coincidence = lcd_status.v.coincidence;
-		lcd_status.v.coincidence = lyc == ly;
-
-		if(!prev_coincidence && lcd_status.v.coincidence && lcd_status.v.lyc_condition) {
-			request_interrupt(interrupt::stat);
-		}
 	}
 
 	constexpr static auto extract_bits(std::uint8_t value, std::uint8_t start, std::uint8_t size) noexcept {

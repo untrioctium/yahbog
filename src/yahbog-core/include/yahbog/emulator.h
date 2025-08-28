@@ -56,9 +56,10 @@ namespace yahbog {
 			mem_fns{default_reader(), default_writer(), bus_state::normal},
 			blocked_mem_fns{blocked_reader(), blocked_writer(), bus_state::dma_blocked},
 			wram(),
-			ppu(&mem_fns, [this](interrupt i) {
-				this->z80.request_interrupt(i);
-			}),
+			ppu(&mem_fns, int_req_t<Mode, mem_fns_t<Mode>>{[](cpu_t<Mode, mem_fns_t<Mode>>* cpu, interrupt i) {
+				cpu->request_interrupt(i);
+			}, &z80}),
+
 			timer([this](interrupt i) {
 				this->z80.request_interrupt(i);
 			})

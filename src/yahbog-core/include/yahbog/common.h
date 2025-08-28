@@ -77,6 +77,9 @@ namespace yahbog {
 		joypad = 0x04,
 	};
 
+	template<hardware_mode Mode, typename MemProvider>
+	using int_req_t = function_ref<void(interrupt), cpu_t<Mode, MemProvider>>;
+
 	template<typename MemProvider>
     constexpr void request_interrupt(interrupt i, MemProvider* mem) noexcept;
 
@@ -118,20 +121,5 @@ namespace yahbog {
 		std::array<T, N> data;
 		std::size_t head = 0; // location of the next element to be read
 		std::size_t tail = 0; // location of the next element to be written
-	};
-
-	template<typename F, typename Context>
-	struct function_ref;
-
-	template<typename R, typename... Args, typename Context>
-	struct function_ref<R(Args...), Context> {
-		R (*fn)(Context*, Args...);
-		Context* ctx;
-
-		constexpr function_ref(R (*fn)(Context*, Args...), Context* ctx) : fn(fn), ctx(ctx) {}
-
-		constexpr R operator()(Args... args) const noexcept {
-			return fn(ctx, std::forward<Args>(args)...);
-		}
 	};
 }

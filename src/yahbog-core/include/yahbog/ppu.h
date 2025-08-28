@@ -13,9 +13,7 @@ namespace yahbog {
 	class ppu_t : public serializable<ppu_t<Mode, MemProvider>> {
 	public:
 
-		using int_req_t = constexpr_function<void(interrupt)>;
-
-		constexpr ppu_t(MemProvider* mem_fns, int_req_t&& int_fn) noexcept : mem_fns(mem_fns), request_interrupt(std::move(int_fn)) {
+		constexpr ppu_t(MemProvider* mem_fns, int_req_t<Mode, MemProvider>&& int_fn) noexcept : mem_fns(mem_fns), request_interrupt(std::move(int_fn)) {
 			lcd_status.v.mode = mode_t::hblank;
 		}
 
@@ -34,7 +32,7 @@ namespace yahbog {
 				mem_helpers::make_member_accessor<0xFF42, &ppu_t::scy>(),
 				mem_helpers::make_member_accessor<0xFF43, &ppu_t::scx>(),
 				address_range_t<ppu_t>{ 0xFF44, &mem_helpers::read_byte<&ppu_t::ly>, [](ppu_t*, std::uint16_t, std::uint8_t) { /* do nothing */ } },
-				mem_helpers::make_member_accessor<0xFF45, &ppu_t::lyc>(),
+				address_range_t<ppu_t>{ 0xFF45, &mem_helpers::read_byte<&ppu_t::lyc>, &ppu_t::update_lyc },
 				address_range_t<ppu_t>{ 0xFF46, &mem_helpers::read_byte<&ppu_t::dma>, &ppu_t::write_dma },
 				mem_helpers::make_member_accessor<0xFF47, &ppu_t::bgp>(),
 				mem_helpers::make_member_accessor<0xFF48, &ppu_t::obp0>(),
@@ -119,6 +117,19 @@ namespace yahbog {
 		using mode_ptr_t = void (ppu_t::*)() noexcept;
 		mode_ptr_t mode_ptr;
 
+		constexpr void update_lyc(std::uint16_t addr, std::uint8_t value) noexcept {
+			lyc = value;
+			check_coincidence();
+		}
+
+		constexpr void check_coincidence() noexcept {
+			auto old_coincidence = lcd_status.v.coincidence;
+			lcd_status.v.coincidence = ly == lyc;
+			if(!old_coincidence && lcd_status.v.coincidence && lcd_status.v.lyc_condition) {
+				request_interrupt(interrupt::stat);
+			}
+		}
+
 		constexpr void write_lcdc(std::uint16_t addr, std::uint8_t value) noexcept {
 			auto old_enable = lcdc.v.lcd_display;
 			lcdc.set_byte(value);
@@ -137,7 +148,7 @@ namespace yahbog {
 		};
 
 		MemProvider* mem_fns = nullptr;
-		int_req_t request_interrupt;
+		int_req_t<Mode, MemProvider> request_interrupt;
 
 		constexpr void update_tile_data(std::uint16_t addr) noexcept {
 			auto saddr = addr;
